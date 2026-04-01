@@ -1045,3 +1045,193 @@ textarea {
   }
 }
 
+/* ─── PharmacistPortal Shared Components ─────────────── */
+.pharm-table-wrap {
+  overflow-x: auto;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+}
+.pharm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93rem;
+}
+.pharm-table th {
+  background: var(--surface-soft);
+  padding: 12px 14px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+}
+.pharm-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.pharm-table tr:last-child td {
+  border-bottom: none;
+}
+.pharm-table tr:hover td {
+  background: rgba(36, 116, 216, 0.03);
+}
+.pharm-table tr.row-warn td {
+  background: rgba(244, 183, 64, 0.06);
+}
+.pharm-table .row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Pharmacy Buttons */
+.pharm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.pharm-btn.sm { padding: 6px 12px; font-size: 0.82rem; }
+.pharm-btn.fill { width: 100%; }
+.pharm-btn.primary  { background: var(--primary); color: white; }
+.pharm-btn.primary:hover  { background: var(--primary-hover); }
+.pharm-btn.secondary { background: var(--surface-soft); color: var(--primary); }
+.pharm-btn.secondary:hover { background: #ddeeff; }
+.pharm-btn.info { background: #eef6ff; color: #1a5fad; }
+.pharm-btn.info:hover { background: #d6ebff; }
+.pharm-btn.danger { background: rgba(228, 88, 88, 0.1); color: var(--red); }
+.pharm-btn.danger:hover { background: rgba(228, 88, 88, 0.18); }
+.pharm-btn.ghost { background: transparent; color: var(--muted); }
+.pharm-btn.ghost:hover { background: var(--surface-soft); color: var(--text); }
+.pharm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Toolbar in panels */
+.pharm-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+.pharm-count {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+/* Form grid 2-col */
+.pharm-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+@media (max-width: 600px) {
+  .pharm-form-grid { grid-template-columns: 1fr; }
+}
+
+/* Modal overlay */
+.pharm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 20, 40, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.pharm-modal {
+  background: white;
+  border-radius: 24px;
+  box-shadow: 0 32px 80px rgba(10,20,40,0.18);
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pharm-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--border);
+}
+.pharm-modal-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.pharm-modal-body {
+  padding: 24px 28px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pharm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.badge-pending, .badge-draft   { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
+.badge-prepared, .badge-issued { background: rgba(36, 116, 216, 0.12); color: var(--primary); }
+.badge-dispensed, .badge-paid  { background: rgba(32, 178, 107, 0.13); color: #116840; }
+.badge-cancelled, .badge-refunded { background: rgba(228, 88, 88, 0.12); color: #9a2c2c; }
+.badge-awaiting_payment, .badge-partially_paid { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
+.badge-warn { background: rgba(228, 88, 88, 0.1); color: var(--red); border-radius: 6px; padding: 2px 8px; }
+
+/* Invoice detail block */
+.invoice-detail-block {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.invoice-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+.invoice-detail-row:last-child { border-bottom: none; }
+.invoice-detail-row span:first-child { color: var(--muted); font-size: 0.88rem; }
+
+/* Invoice summary in payment tab */
+.pharm-invoice-summary {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--surface-soft);
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+.pharm-invoice-summary span { color: var(--muted); }
+.pharm-invoice-summary strong { color: var(--text); }
+
+.text-muted { color: var(--muted); }

@@ -108,7 +108,7 @@ function useDashboardData(role) {
       const requests = {
         patient: ["/api/v1/appointments", "/api/v1/doctors", "/api/v1/services", "/api/v1/invoices"],
         doctor: ["/api/v1/appointments", "/api/v1/patients", "/api/v1/medicines"],
-        pharmacist: ["/api/v1/medicines", "/api/v1/prescriptions", "/api/v1/invoices", "/api/v1/suppliers"],
+        pharmacist: ["/api/v1/medicines", "/api/v1/prescriptions", "/api/v1/invoices", "/api/v1/suppliers", "/api/v1/appointments/completed-no-invoice"],
         admin: ["/api/v1/reports/dashboard", "/api/v1/doctors", "/api/v1/medicines", "/api/v1/admin/accounts", "/api/v1/holidays"],
       }[role] || [];
 
@@ -119,9 +119,11 @@ function useDashboardData(role) {
       });
       setState({ loading: false, error: "", data });
     } catch (error) {
+      const detail = error.response?.data?.detail;
+      const errStr = typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : error.message || "Không thể tải dữ liệu";
       setState({
         loading: false,
-        error: error.response?.data?.detail || error.message || "Không thể tải dữ liệu",
+        error: errStr,
         data: {},
       });
     }
@@ -154,8 +156,10 @@ function PortalScreen({ role, title, subtitle, render }) {
     ],
     pharmacist: [
       { id: "tongquan", label: "Tổng quan" },
-      { id: "khothuoc", label: "Kho & Đơn thuốc" },
-      { id: "hoadon", label: "Hóa đơn & TT" },
+      { id: "khothuoc", label: "Kho thuốc" },
+      { id: "nhacungcap", label: "Nhà cung cấp" },
+      { id: "hoadon", label: "Hóa đơn" },
+      { id: "thanhtoan", label: "Thanh toán" },
     ],
     patient: [
       { id: "tongquan", label: "Tổng quan" },

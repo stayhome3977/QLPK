@@ -886,6 +886,25 @@ def create_walk_in(payload: WalkInCreate, db: Session = Depends(get_db), current
     return serialize_appointment(db, appointment)
 
 
+@router.get("/api/v1/appointments/completed-no-invoice")
+def completed_appointments_no_invoice(db: Session = Depends(get_db), current_user: User = Depends(require_role(["pharmacist", "admin"]))):
+    """Danh sách lịch khám đã hoàn thành và chưa có hóa đơn đầy đủ (để tạo HĐ thủ công)"""
+    completed = db.query(Appointment).filter(Appointment.status == AppointmentStatus.completed).all()
+    result = []
+    for appt in completed:
+        patient = db.query(User).filter(User.id == appt.patient_id).first()
+        doctor = db.query(Doctor).filter(Doctor.id == appt.doctor_id).first()
+        doctor_user = db.query(User).filter(User.id == doctor.user_id).first() if doctor else None
+        result.append({
+            "id": appt.id,
+            "appointment_date": str(appt.appointment_date),
+            "appointment_time": str(appt.appointment_time),
+            "patient_name": patient.full_name if patient else "",
+            "doctor_name": doctor_user.full_name if doctor_user else "",
+        })
+    return result
+
+
 @router.get("/api/v1/appointments/{appointment_id}")
 def get_appointment(appointment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return serialize_appointment(db, get_appointment_or_404(db, appointment_id))
@@ -1254,6 +1273,16 @@ def update_medicine(medicine_id: int, payload: MedicineCreate, db: Session = Dep
         setattr(medicine, key, value)
     db.commit()
     return {"message": "Đã cập nhật thuốc"}
+
+
+@router.delete("/api/v1/medicines/{medicine_id}")
+def deactivate_medicine(medicine_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "pharmacist"]))):
+    medicine = db.query(Medicine).filter(Medicine.id == medicine_id).first()
+    if not medicine:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+    medicine.is_active = False
+    db.commit()
+    return {"message": "Đã vô hiệu hóa thuốc"}
 
 
 @router.post("/api/v1/medicines/{medicine_id}/batches/import")
@@ -1736,6 +1765,19 @@ def update_supplier(
         setattr(supplier, key, value)
     db.commit()
     return {"message": "Đã cập nhật nhà cung cấp"}
+
+
+@router.delete("/api/v1/suppliers/{supplier_id}")
+def deactivate_supplier(supplier_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "pharmacist"]))):
+    supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    supplier.is_active = False
+    db.commit()
+    return {"message": "Đã vô hiệu hóa nhà cung cấp"}
+
+
+
 
 
 @router.get("/api/v1/notifications", response_model=list[NotificationView])

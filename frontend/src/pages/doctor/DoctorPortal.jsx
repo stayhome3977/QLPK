@@ -1,88 +1,180 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../../api/http";
-import { Field, Panel, AppointmentTable, Alert } from "../../components/shared/UI";
+import { EmptyState, Field, Panel } from "../../components/shared/UI";
+import { fmtDate, fmtTime, STATUS_LABELS } from "../../utils/helpers";
 
-export function DoctorPortal({ data, reload, runAction }) {
-  const appointments = data.appointments || [];
-  const medicines = data.medicines || [];
+export function DoctorPortal({ loading, data, reload, activeTab }) {
+  const appointments = data["/api/v1/appointments"] || [];
+  const medicines = data["/api/v1/medicines"] || [];
+  const waitingAppointments = useMemo(
+    () => appointments.filter((item) => ["pending", "confirmed", "checked_in", "in_progress"].includes(item.status)),
+    [appointments],
+  );
+  const [selected, setSelected] = useState(null);
+  const [proposal, setProposal] = useState({ proposed_date: "", proposed_time: "", note: "", discount_percent: 0, discount_note: "" });
+  const [record, setRecord] = useState({ diagnosis: "", symptoms: "" });
+  const [prescription, setPrescription] = useState({ medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" });
 
-  const [record, setRecord] = useState({ appointment_id: "", patient_id: "", doctor_id: "", diagnosis: "", symptoms: "" });
-  const [rx, setRx] = useState({ medical_record_id: "", patient_id: "", doctor_id: "", medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày", unit_price: 0 });
+  const chooseAppointment = (appointment) => {
+    setSelected(appointment);
+    setRecord({ diagnosis: "", symptoms: appointment.chief_complaint || "" });
+  };
 
-  const onStart = (item) => runAction(() => api.patch(`/api/v1/appointments/${item.id}/start`));
-  const onComplete = (item) => runAction(() => api.patch(`/api/v1/appointments/${item.id}/complete`));
+  const approve = async () => {
+    await api.patch(`/api/v1/appointments/${selected.id}/approve`, {});
+    await reload();
+  };
 
-  const saveRecord = () => runAction(() => api.post("/api/v1/medical-records", {
-    ...record,
-    appointment_id: Number(record.appointment_id),
-    patient_id: Number(record.patient_id),
-    doctor_id: Number(record.doctor_id),
-  }));
+  const sendProposal = async () => {
+    await api.patch(`/api/v1/appointments/${selected.id}/propose-reschedule`, {
+      ...proposal,
+      discount_percent: Number(proposal.discount_percent || 0),
+    });
+    await reload();
+  };
 
-  const saveRx = () => runAction(() => api.post("/api/v1/prescriptions", {
-    medical_record_id: Number(rx.medical_record_id),
-    patient_id: Number(rx.patient_id),
-    doctor_id: Number(rx.doctor_id),
-    items: [{
-      medicine_id: Number(rx.medicine_id),
-      quantity: Number(rx.quantity),
-      dosage: rx.dosage,
-      frequency: rx.frequency,
-      unit_price: Number(rx.unit_price)
-    }]
-  }));
+  const start = async () => {
+    await api.patch(`/api/v1/appointments/${selected.id}/start`);
+    await reload();
+  };
+
+  const complete = async () => {
+    await api.patch(`/api/v1/appointments/${selected.id}/complete`);
+    await reload();
+  };
+
+  const saveRecord = async () => {
+    const medicalRecord = await api.post("/api/v1/medical-records", {
+      appointment_id: selected.id,
+      patient_id: selected.patient_id,
+      doctor_id: selected.doctor_id,
+      diagnosis: record.diagnosis,
+      symptoms: record.symptoms,
+    });
+
+    if (prescription.medicine_id) {
+      await api.post("/api/v1/prescriptions", {
+        medical_record_id: medicalRecord.data.id,
+        patient_id: selected.patient_id,
+        doctor_id: selected.doctor_id,
+        items: [
+          {
+            medicine_id: Number(prescription.medicine_id),
+            quantity: Number(prescription.quantity),
+            dosage: prescription.dosage,
+            frequency: prescription.frequency,
+            unit_price: Number(medicines.find((item) => String(item.id) === String(prescription.medicine_id))?.price_per_unit || 0),
+          },
+        ],
+      });
+    }
+
+    await reload();
+  };
 
   return (
-    <>
-      <Panel title="👨‍⚕️ Lịch khám của tôi hôm nay">
-        <AppointmentTable
-          items={appointments}
-          actions={[
-            { label: "Bắt đầu khám", cls: "btn-primary", show: (i) => i.status === "checked_in", run: onStart },
-            { label: "Hoàn tất", cls: "btn-success", show: (i) => i.status === "in_progress", run: onComplete }
-          ]}
-        />
-      </Panel>
-
-      <div className="content-grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 0 }}>
-        <Panel title="📝 Ghi nhận Bệnh án">
-          <div className="form-grid" style={{ gridTemplateColumns: "1fr" }}>
-            <Field label="Mã lịch hẹn (Appointment ID)"><input value={record.appointment_id} onChange={(e) => setRecord(p => ({ ...p, appointment_id: e.target.value }))} /></Field>
-            <Field label="Mã bệnh nhân (Patient ID)"><input value={record.patient_id} onChange={(e) => setRecord(p => ({ ...p, patient_id: e.target.value }))} /></Field>
-            <Field label="Mã bác sĩ (Doctor ID)"><input value={record.doctor_id} onChange={(e) => setRecord(p => ({ ...p, doctor_id: e.target.value }))} /></Field>
-            <Field label="Chẩn đoán"><input value={record.diagnosis} onChange={(e) => setRecord(p => ({ ...p, diagnosis: e.target.value }))} placeholder="VD: Viêm da cơ địa..."/></Field>
-            <Field label="Triệu chứng"><textarea value={record.symptoms} onChange={(e) => setRecord(p => ({ ...p, symptoms: e.target.value }))} /></Field>
-          </div>
-          <button className="btn btn-primary" onClick={saveRecord} style={{ marginTop: "1rem" }}>Lưu bệnh án</button>
-        </Panel>
-
-        <Panel title="💊 Kê đơn thuốc nhanh">
-          <div className="form-grid" style={{ gridTemplateColumns: "1fr" }}>
-            <Field label="Mã bệnh án (Record ID)"><input value={rx.medical_record_id} onChange={(e) => setRx(p => ({ ...p, medical_record_id: e.target.value }))} /></Field>
-            <Field label="Mã bệnh nhân (Patient ID)"><input value={rx.patient_id} onChange={(e) => setRx(p => ({ ...p, patient_id: e.target.value }))} /></Field>
-            <Field label="Mã bác sĩ (Doctor ID)"><input value={rx.doctor_id} onChange={(e) => setRx(p => ({ ...p, doctor_id: e.target.value }))} /></Field>
-            <Field label="Chọn thuốc">
-              <select value={rx.medicine_id} onChange={(e) => {
-                const mid = e.target.value;
-                const m = medicines.find(x => String(x.id) === String(mid));
-                setRx(p => ({ ...p, medicine_id: mid, unit_price: m ? m.price_per_unit : 0 }));
-              }}>
-                <option value="">-- Chọn thuốc --</option>
-                {medicines.map(m => <option key={m.id} value={m.id}>{m.name} - Tồn: {m.current_stock}</option>)}
-              </select>
-            </Field>
-            <div className="form-grid" style={{ marginBottom: 0 }}>
-              <Field label="Số lượng"><input type="number" min="1" value={rx.quantity} onChange={(e) => setRx(p => ({ ...p, quantity: e.target.value }))} /></Field>
-              <Field label="Đơn giá"><input type="number" value={rx.unit_price} readOnly style={{ background: "var(--bg-2)" }}/></Field>
+    <div className="dashboard-sections">
+      {activeTab === "tongquan" && (
+        <Panel title="Lịch hẹn cần xử lý">
+          {loading ? (
+            <p>Đang tải...</p>
+          ) : waitingAppointments.length === 0 ? (
+            <EmptyState text="Không có lịch cần xử lý." />
+          ) : (
+            <div className="list-stack">
+              {waitingAppointments.map((appointment) => (
+                <button key={appointment.id} className={`list-row selectable ${selected?.id === appointment.id ? "active" : ""}`} onClick={() => chooseAppointment(appointment)}>
+                  <div>
+                    <strong>{appointment.patient_name}</strong>
+                    <p>
+                      {fmtDate(appointment.appointment_date)} lúc {fmtTime(appointment.appointment_time)}
+                    </p>
+                  </div>
+                  <span>{STATUS_LABELS[appointment.status]}</span>
+                </button>
+              ))}
             </div>
-            <div className="form-grid" style={{ marginBottom: 0 }}>
-              <Field label="Liều dùng"><input value={rx.dosage} onChange={(e) => setRx(p => ({ ...p, dosage: e.target.value }))} /></Field>
-              <Field label="Tần suất"><input value={rx.frequency} onChange={(e) => setRx(p => ({ ...p, frequency: e.target.value }))} /></Field>
-            </div>
-          </div>
-          <button className="btn btn-primary" onClick={saveRx} style={{ marginTop: "1rem" }}>Tạo đơn thuốc</button>
+          )}
         </Panel>
-      </div>
-    </>
+      )}
+
+      {activeTab === "lichkham" && (
+        <div className="dashboard-sections two-columns">
+          <Panel title="Duyệt lịch và đề nghị dời lịch">
+            {!selected ? (
+              <EmptyState text="Chưa chọn lịch hẹn từ Tổng quan." />
+            ) : (
+              <div className="form-stack">
+                <p>
+                  <strong>{selected.patient_name}</strong> - {selected.chief_complaint}
+                </p>
+                <div className="row-actions">
+                  <button className="primary-button" onClick={approve}>
+                    Chốt lịch
+                  </button>
+                  {selected.status === "checked_in" ? <button className="secondary-link button-link" onClick={start}>Bắt đầu khám</button> : null}
+                  {selected.status === "in_progress" ? <button className="secondary-link button-link" onClick={complete}>Hoàn tất khám</button> : null}
+                </div>
+                <div className="form-columns">
+                  <Field label="Ngày đề nghị mới">
+                    <input type="date" value={proposal.proposed_date} onChange={(e) => setProposal((p) => ({ ...p, proposed_date: e.target.value }))} />
+                  </Field>
+                  <Field label="Giờ đề nghị mới">
+                    <input type="time" value={proposal.proposed_time} onChange={(e) => setProposal((p) => ({ ...p, proposed_time: e.target.value }))} />
+                  </Field>
+                </div>
+                <Field label="Ghi chú cho bệnh nhân">
+                  <textarea value={proposal.note} onChange={(e) => setProposal((p) => ({ ...p, note: e.target.value }))} />
+                </Field>
+                <div className="form-columns">
+                  <Field label="Ưu đãi (%)">
+                    <input type="number" value={proposal.discount_percent} onChange={(e) => setProposal((p) => ({ ...p, discount_percent: e.target.value }))} />
+                  </Field>
+                  <Field label="Ghi chú ưu đãi">
+                    <input value={proposal.discount_note} onChange={(e) => setProposal((p) => ({ ...p, discount_note: e.target.value }))} />
+                  </Field>
+                </div>
+                <button className="ghost-button" onClick={sendProposal}>
+                  Gửi đề nghị đổi lịch
+                </button>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Khám bệnh và kê đơn">
+            {!selected ? (
+              <EmptyState text="Chưa chọn lịch hẹn từ Tổng quan." />
+            ) : (
+              <div className="form-stack">
+                <Field label="Triệu chứng">
+                  <textarea value={record.symptoms} onChange={(e) => setRecord((p) => ({ ...p, symptoms: e.target.value }))} />
+                </Field>
+                <Field label="Chẩn đoán">
+                  <input value={record.diagnosis} onChange={(e) => setRecord((p) => ({ ...p, diagnosis: e.target.value }))} />
+                </Field>
+                <div className="form-columns">
+                  <Field label="Thuốc">
+                    <select value={prescription.medicine_id} onChange={(e) => setPrescription((p) => ({ ...p, medicine_id: e.target.value }))}>
+                      <option value="">Không kê thuốc</option>
+                      {medicines.map((medicine) => (
+                        <option key={medicine.id} value={medicine.id}>
+                          {medicine.name} - tồn {medicine.current_stock}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Số lượng">
+                    <input type="number" value={prescription.quantity} onChange={(e) => setPrescription((p) => ({ ...p, quantity: e.target.value }))} />
+                  </Field>
+                </div>
+                <button className="primary-button" onClick={saveRecord}>
+                  Lưu bệnh án và gửi đơn thuốc
+                </button>
+              </div>
+            )}
+          </Panel>
+        </div>
+      )}
+    </div>
   );
 }

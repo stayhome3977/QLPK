@@ -55,7 +55,7 @@ export function Panel({ title, children, actions }) {
 }
 
 // Appointment table shared across roles
-export function AppointmentTable({ items, actions = [] }) {
+export function AppointmentTable({ items, actions = [], selectedId, onRowClick }) {
   if (!items || items.length === 0) return <EmptyState icon="📅" text="Không có lịch hẹn nào." />;
   return (
     <div className="table-wrap">
@@ -73,10 +73,17 @@ export function AppointmentTable({ items, actions = [] }) {
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
-            <tr key={item.id}>
-              <td className="muted">{item.id}</td>
-              <td>{item.patient_name || "—"}</td>
+          {items.map((item) => {
+            const isSelected = selectedId === item.id;
+            return (
+              <tr 
+                key={item.id} 
+                className={`row-${item.status} ${isSelected ? 'selected' : ''}`}
+                onClick={() => onRowClick && onRowClick(item)}
+                style={{ cursor: onRowClick ? 'pointer' : 'default' }}
+              >
+                <td className="muted">{item.id}</td>
+                <td>{item.patient_name || "—"}</td>
               <td>{item.doctor_name || "—"}</td>
               <td>{fmtDate(item.appointment_date)}</td>
               <td>{item.appointment_time ? item.appointment_time.slice(0, 5) : "—"}</td>
@@ -102,7 +109,8 @@ export function AppointmentTable({ items, actions = [] }) {
                 </td>
               )}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -146,3 +154,29 @@ export function MedicineTable({ items }) {
     </div>
   );
 }
+
+// ── Shared Tabs Component ────────────────────────────
+export function Tabs({ tabs, activeTab, onChange }) {
+  if (!tabs || tabs.length === 0) return null;
+  const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
+  
+  return (
+    <div className="tabs-container">
+      <div className="tabs-header">
+        {tabs.map(tab => (
+          <button 
+            key={tab.id}
+            className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => onChange(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="tab-content">
+        {currentTab?.content}
+      </div>
+    </div>
+  );
+}
+

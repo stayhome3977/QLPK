@@ -1,63 +1,147 @@
+import { useState } from "react";
 import { api } from "../../api/http";
-import { Panel, MedicineTable, Alert } from "../../components/shared/UI";
-import { PRESCRIPTION_STATUS_LABELS, fmtDateTime } from "../../utils/helpers";
+import { EmptyState, Field, Panel } from "../../components/shared/UI";
+import { currency, INVOICE_STATUS_LABELS, PRESCRIPTION_STATUS_LABELS } from "../../utils/helpers";
 
-export function PharmacistPortal({ data, reload, runAction }) {
-  const medicines = data.medicines || [];
-  const prescriptions = data.prescriptions || [];
+export function PharmacistPortal({ loading, data, reload, activeTab }) {
+  const medicines = data["/api/v1/medicines"] || [];
+  const prescriptions = data["/api/v1/prescriptions"] || [];
+  const invoices = data["/api/v1/invoices"] || [];
+  const suppliers = data["/api/v1/suppliers"] || [];
+  const [supplierForm, setSupplierForm] = useState({ name: "", contact_name: "", phone: "" });
+  const [payment, setPayment] = useState({ invoice_id: "", amount: "", payment_method: "cash" });
 
-  const onPrepare = (item) => runAction(() => api.patch(`/api/v1/prescriptions/${item.id}/prepare`));
-  const onDispense = (item) => runAction(() => api.patch(`/api/v1/prescriptions/${item.id}/dispense`));
-  const onRelease = (item) => runAction(() => api.patch(`/api/v1/prescriptions/${item.id}/release`));
+  const createSupplier = async () => {
+    await api.post("/api/v1/suppliers", supplierForm);
+    setSupplierForm({ name: "", contact_name: "", phone: "" });
+    await reload();
+  };
+
+  const prepare = async (id) => {
+    await api.patch(`/api/v1/prescriptions/${id}/prepare`);
+    await reload();
+  };
+
+  const dispense = async (id) => {
+    await api.patch(`/api/v1/prescriptions/${id}/dispense`);
+    await reload();
+  };
+
+  const payInvoice = async () => {
+    await api.patch(`/api/v1/invoices/${payment.invoice_id}/pay`, {
+      amount: Number(payment.amount),
+      payment_method: payment.payment_method,
+    });
+    setPayment({ invoice_id: "", amount: "", payment_method: "cash" });
+    await reload();
+  };
 
   return (
-    <>
-      <Panel title="📦 Kệ Thuốc Phòng Khám (Tồn Kho)">
-        <MedicineTable items={medicines} />
-      </Panel>
+    <div className="dashboard-sections">
+      {activeTab === "tongquan" && (
+        <Panel title="Đơn thuốc cần cấp">
+          {loading ? (
+            <p>Đang tải...</p>
+          ) : prescriptions.length === 0 ? (
+            <EmptyState text="Chưa có đơn thuốc nào." />
+          ) : (
+            <div className="list-stack">
+              {prescriptions.map((prescription) => (
+                <div className="list-row" key={prescription.id}>
+                  <div>
+                    <strong>Đơn #{prescription.id}</strong>
+                    <p>{PRESCRIPTION_STATUS_LABELS[prescription.status]}</p>
+                  </div>
+                  <div className="row-actions">
+                    {prescription.status === "pending" ? <button className="secondary-link button-link" onClick={() => prepare(prescription.id)}>Chuẩn bị</button> : null}
+                    {["prepared", "awaiting_payment"].includes(prescription.status) ? (
+                      <button className="primary-button small" onClick={() => dispense(prescription.id)}>
+                        Giao thuốc
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      )}
 
-      <Panel title="📝 Đơn Thuốc Đang Xử Lý">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Mã ĐT</th><th>Khoa</th><th>Ngày gửi</th><th>Trạng thái</th><th>Thao tác</th></tr>
-            </thead>
-            <tbody>
-              {prescriptions.map((p) => {
-                let badgeCls = "chip-gray";
-                if (p.status === "pending") badgeCls = "chip-yellow";
-                if (p.status === "prepared") badgeCls = "chip-blue";
-                if (p.status === "awaiting_payment") badgeCls = "chip-purple";
-                if (p.status === "dispensed") badgeCls = "chip-green";
-                if (p.status === "cancelled") badgeCls = "chip-red";
+      {activeTab === "hoadon" && (
+        <Panel title="Thanh toán hóa đơn">
+          <div className="form-stack">
+            <Field label="Hóa đơn">
+              <select value={payment.invoice_id} onChange={(e) => setPayment((p) => ({ ...p, invoice_id: e.target.value }))}>
+                <option value="">Chọn hóa đơn</option>
+                {invoices.map((invoice) => (
+                  <option key={invoice.id} value={invoice.id}>
+                    {invoice.invoice_number} - {INVOICE_STATUS_LABELS[invoice.invoice_status]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Số tiền">
+              <input type="number" value={payment.amount} onChange={(e) => setPayment((p) => ({ ...p, amount: e.target.value }))} />
+            </Field>
+            <Field label="Phương thức">
+              <select value={payment.payment_method} onChange={(e) => setPayment((p) => ({ ...p, payment_method: e.target.value }))}>
+                <option value="cash">Tiền mặt</option>
+                <option value="card">Thẻ</option>
+                <option value="transfer">Chuyển khoản</option>
+              </select>
+            </Field>
+            <button className="primary-button" onClick={payInvoice}>
+              Thu tiền
+            </button>
+          </div>
+        </Panel>
+      )}
 
-                return (
-                  <tr key={p.id}>
-                    <td><strong>ĐT-{p.id.toString().padStart(4, "0")}</strong></td>
-                    <td>BS {p.doctor_id}</td>
-                    <td className="muted">{fmtDateTime(p.created_at || new Date())}</td>
-                    <td><span className={`chip ${badgeCls}`}>{PRESCRIPTION_STATUS_LABELS[p.status] || p.status}</span></td>
-                    <td>
-                      <div className="cta-row">
-                        {p.status === "pending" && (
-                          <button className="btn btn-sm btn-primary" onClick={() => onPrepare(p)}>Soạn thuốc</button>
-                        )}
-                        {/* Lưu ý: Dược sĩ chỉ xuất thuốc khi status của đơn thuốc cho phép (đã thanh toán / duyệt) -> logic backend quyết định. Ở đây Pharmacist có thể thử Bấm Dispense */}
-                        {(p.status === "prepared" || p.status === "awaiting_payment") && (
-                          <button className="btn btn-sm btn-success" onClick={() => onDispense(p)}>Giao thuốc</button>
-                        )}
-                        {(p.status === "prepared" || p.status === "awaiting_payment") && (
-                          <button className="btn btn-sm btn-danger" onClick={() => onRelease(p)}>Hủy soạn</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {activeTab === "khothuoc" && (
+        <div className="dashboard-sections two-columns">
+          <Panel title="Kho thuốc">
+            <div className="list-stack">
+              {medicines.map((medicine) => (
+                <div key={medicine.id} className="list-row">
+                  <div>
+                    <strong>{medicine.name}</strong>
+                    <p>{medicine.category || "Thuốc da liễu"}</p>
+                  </div>
+                  <span>{medicine.current_stock} {medicine.unit}</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title="Nhà cung cấp">
+            <div className="form-stack">
+              <Field label="Tên nhà cung cấp">
+                <input value={supplierForm.name} onChange={(e) => setSupplierForm((p) => ({ ...p, name: e.target.value }))} />
+              </Field>
+              <Field label="Người liên hệ">
+                <input value={supplierForm.contact_name} onChange={(e) => setSupplierForm((p) => ({ ...p, contact_name: e.target.value }))} />
+              </Field>
+              <Field label="Số điện thoại">
+                <input value={supplierForm.phone} onChange={(e) => setSupplierForm((p) => ({ ...p, phone: e.target.value }))} />
+              </Field>
+              <button className="secondary-link button-link" onClick={createSupplier}>
+                Thêm nhà cung cấp
+              </button>
+              <div className="list-stack compact-list">
+                {suppliers.map((supplier) => (
+                  <div key={supplier.id} className="list-row">
+                    <div>
+                      <strong>{supplier.name}</strong>
+                      <p>{supplier.contact_name || "Chưa có người liên hệ"}</p>
+                    </div>
+                    <span>{supplier.phone || "—"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Panel>
         </div>
-      </Panel>
-    </>
+      )}
+    </div>
   );
 }

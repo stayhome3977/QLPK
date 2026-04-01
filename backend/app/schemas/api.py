@@ -1,7 +1,22 @@
 from datetime import date, datetime, time
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+import re
+
+# NOTE: lookahead not supported in pydantic-core (Rust regex engine)
+# Password validation is done in field_validator instead
+PHONE_PATTERN = r"^(0|\+84)\d{9,10}$"
+
+
+def _validate_password(v: str) -> str:
+    """Validate password: min 8 chars, at least one uppercase letter and one digit."""
+    if len(v) < 8:
+        raise ValueError("Mật khẩu phải có ít nhất 8 ký tự")
+    if not any(c.isupper() for c in v):
+        raise ValueError("Mật khẩu phải chứa ít nhất một chữ hoa")
+    if not any(c.isdigit() for c in v):
+        raise ValueError("Mật khẩu phải chứa ít nhất một chữ số")
+    return v
 
 
 class ORMBase(BaseModel):
@@ -16,7 +31,7 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-    user: dict[str, Any]
+    user: dict
 
 
 class LoginRequest(BaseModel):
@@ -28,47 +43,91 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=8)
-    phone: str | None = None
+    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
     date_of_birth: date | None = None
     gender: str | None = None
     address: str | None = None
 
-
-class QuickPatientCreate(BaseModel):
-    full_name: str = Field(min_length=2, max_length=100)
-    phone: str = Field(min_length=8, max_length=15)
-    date_of_birth: date | None = None
-    gender: str | None = None
-    address: str | None = None
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return _validate_password(v)
 
 
 class PatientUpdate(BaseModel):
-    full_name: str | None = None
-    phone: str | None = None
+    full_name: str | None = Field(default=None, min_length=2, max_length=100)
+    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
     date_of_birth: date | None = None
     gender: str | None = None
     address: str | None = None
     insurance_number: str | None = None
     allergy_notes: str | None = None
     occupation: str | None = None
+    emergency_contact_name: str | None = None
+    emergency_contact_phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+
+
+class QuickPatientCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=100)
+    phone: str = Field(pattern=PHONE_PATTERN)
+    date_of_birth: date | None = None
+    gender: str | None = None
+    address: str | None = None
 
 
 class LinkUserPayload(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
 
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return _validate_password(v)
 
-class DoctorCreate(BaseModel):
-    full_name: str
+
+class AdminAccountCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=8)
-    phone: str | None = None
+    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    specialty: str | None = None
+    license_number: str | None = None
+    degree: str | None = None
+    experience_years: int = Field(default=0, ge=0)
+    consultation_fee: float = Field(default=200000, ge=0)
+    bio: str | None = None
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return _validate_password(v)
+
+
+class DoctorCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=8)
+    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
     specialty: str
     license_number: str
     degree: str | None = None
-    experience_years: int = 0
-    consultation_fee: float = 200000
+    experience_years: int = Field(default=0, ge=0)
+    consultation_fee: float = Field(default=200000, ge=0)
     bio: str | None = None
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return _validate_password(v)
+
+
+class ResetPasswordPayload(BaseModel):
+    new_password: str = Field(min_length=8)
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return _validate_password(v)
 
 
 class DoctorSchedulePayload(BaseModel):
@@ -77,6 +136,13 @@ class DoctorSchedulePayload(BaseModel):
     end_time: time
     slot_duration: int = Field(default=30, ge=10)
     max_patients: int = Field(default=20, ge=1)
+
+
+class DoctorBusySlotPayload(BaseModel):
+    busy_date: date
+    start_time: time
+    end_time: time
+    reason: str | None = None
 
 
 class DoctorLeavePayload(BaseModel):
@@ -94,8 +160,8 @@ class ServiceCreate(BaseModel):
     name: str
     category: str | None = None
     description: str | None = None
-    price: float
-    duration: int = 30
+    price: float = Field(ge=0)
+    duration: int = Field(default=30, ge=10)
     image_url: str | None = None
 
 
@@ -105,16 +171,15 @@ class AppointmentCreate(BaseModel):
     primary_service_id: int | None = None
     appointment_date: date
     appointment_time: time
-    duration_minutes: int = 30
-    chief_complaint: str | None = None
+    duration_minutes: int = Field(default=30, ge=10)
+    chief_complaint: str = Field(min_length=10, max_length=500)
     notes: str | None = None
-    booking_source: str = "patient_app"
 
 
 class WalkInCreate(BaseModel):
     patient_id: int | None = None
     patient_name: str | None = None
-    patient_phone: str | None = None
+    patient_phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
     doctor_id: int
     primary_service_id: int | None = None
     appointment_date: date
@@ -126,6 +191,18 @@ class AppointmentServicePayload(BaseModel):
     service_id: int
     quantity: int = Field(default=1, ge=1)
     notes: str | None = None
+
+
+class AppointmentApprovalPayload(BaseModel):
+    note: str | None = None
+
+
+class RescheduleProposalPayload(BaseModel):
+    proposed_date: date
+    proposed_time: time
+    note: str = Field(min_length=5, max_length=500)
+    discount_percent: float = Field(default=0, ge=0, le=100)
+    discount_note: str | None = None
 
 
 class ReschedulePayload(BaseModel):
@@ -147,7 +224,7 @@ class MedicalRecordCreate(BaseModel):
     doctor_id: int
     symptoms: str | None = None
     clinical_findings: str | None = None
-    diagnosis: str
+    diagnosis: str = Field(min_length=3, max_length=500)
     icd10_code: str | None = None
     treatment_plan: str | None = None
     follow_up_date: date | None = None
@@ -158,7 +235,7 @@ class MedicalRecordCreate(BaseModel):
 class MedicalRecordUpdate(BaseModel):
     symptoms: str | None = None
     clinical_findings: str | None = None
-    diagnosis: str | None = None
+    diagnosis: str | None = Field(default=None, min_length=3, max_length=500)
     icd10_code: str | None = None
     treatment_plan: str | None = None
     follow_up_date: date | None = None
@@ -171,9 +248,9 @@ class PrescriptionItemPayload(BaseModel):
     quantity: int = Field(ge=1)
     dosage: str
     frequency: str
-    duration_days: int | None = None
+    duration_days: int | None = Field(default=None, ge=1)
     instruction: str | None = None
-    unit_price: float
+    unit_price: float = Field(ge=0)
 
 
 class PrescriptionCreate(BaseModel):
@@ -184,13 +261,23 @@ class PrescriptionCreate(BaseModel):
     items: list[PrescriptionItemPayload]
 
 
+class SupplierCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    contact_name: str | None = None
+    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    email: EmailStr | None = None
+    address: str | None = None
+    tax_code: str | None = None
+    notes: str | None = None
+
+
 class MedicineCreate(BaseModel):
     name: str
     generic_name: str | None = None
     category: str | None = None
     unit: str
-    price_per_unit: float
-    reorder_level: int = 50
+    price_per_unit: float = Field(ge=0)
+    reorder_level: int = Field(default=50, ge=0)
     manufacturer: str | None = None
     storage_conditions: str | None = None
     description: str | None = None
@@ -200,14 +287,14 @@ class MedicineBatchImport(BaseModel):
     batch_number: str
     expiry_date: date
     import_quantity: int = Field(ge=1)
-    import_unit_cost: float = 0
+    import_unit_cost: float = Field(default=0, ge=0)
     supplier_name: str | None = None
 
 
 class InvoiceGeneratePayload(BaseModel):
-    discount_amount: float = 0
+    discount_amount: float = Field(default=0, ge=0)
     discount_reason: str | None = None
-    insurance_support_amount: float = 0
+    insurance_support_amount: float = Field(default=0, ge=0)
     notes: str | None = None
 
 
@@ -227,10 +314,6 @@ class ApproveCreditPayload(BaseModel):
     notes: str | None = None
 
 
-class NotificationReadPayload(BaseModel):
-    is_read: bool = True
-
-
 class AppointmentView(ORMBase):
     id: int
     patient_id: int
@@ -242,7 +325,6 @@ class AppointmentView(ORMBase):
     booking_source: str
     queue_number: int | None = None
     chief_complaint: str | None = None
-    notes: str | None = None
     created_at: datetime
 
 
@@ -255,4 +337,3 @@ class NotificationView(ORMBase):
     is_read: bool
     action_url: str | None = None
     created_at: datetime
-

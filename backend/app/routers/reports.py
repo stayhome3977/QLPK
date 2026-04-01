@@ -16,7 +16,7 @@ def revenue_report(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["admin", "cashier"])),
+    current_user=Depends(require_role(["admin", "pharmacist"])),
 ):
     query = db.query(Invoice).filter(Invoice.payment_status.in_([PaymentStatus.paid, PaymentStatus.credit_approved]))
     if date_from:
@@ -30,7 +30,7 @@ def revenue_report(
 
 
 @router.get("/appointments")
-def appointments_report(db: Session = Depends(get_db), current_user=Depends(require_role(["admin", "receptionist"]))):
+def appointments_report(db: Session = Depends(get_db), current_user=Depends(require_role(["admin", "doctor"]))):
     total = db.query(Appointment).count()
     grouped = (
         db.query(Appointment.status, func.count(Appointment.id))
@@ -55,7 +55,7 @@ def inventory_report(db: Session = Depends(get_db), current_user=Depends(require
 
 
 @router.get("/dashboard")
-def dashboard_report(db: Session = Depends(get_db), current_user=Depends(require_role(["admin", "receptionist", "cashier", "pharmacist", "doctor"]))):
+def dashboard_report(db: Session = Depends(get_db), current_user=Depends(require_role(["admin", "pharmacist", "doctor", "patient"]))):
     today = date.today()
     today_appointments = db.query(Appointment).filter(Appointment.appointment_date == today).count()
     waiting = db.query(Appointment).filter(Appointment.status == AppointmentStatus.checked_in).count()
@@ -74,4 +74,3 @@ def dashboard_report(db: Session = Depends(get_db), current_user=Depends(require
         "paid_today": float(paid_today),
         "low_stock_count": low_stock,
     }
-

@@ -1,10 +1,9 @@
--- ============================================================
--- QLPK - Quản Lý Phòng Khám Da Liễu
--- MySQL 8.0+ — Full Schema
--- Chạy file này trong MySQL Workbench hoặc mysql CLI
+﻿-- ============================================================
+-- QLPK - Quan ly phong kham da lieu
+-- MySQL 8.0+
+-- Ban luoc do da duoc Viet hoa theo kieu khong dau
 -- ============================================================
 
--- Bước 1: Tạo database (bỏ qua nếu đã tồn tại)
 CREATE DATABASE IF NOT EXISTS phong_kham_da_lieu
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
@@ -12,499 +11,589 @@ CREATE DATABASE IF NOT EXISTS phong_kham_da_lieu
 USE phong_kham_da_lieu;
 
 -- ============================================================
--- 1. users — Tài khoản hệ thống
+-- 1. tai_khoan - Tai khoan he thong
 -- ============================================================
-CREATE TABLE IF NOT EXISTS users (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    email               VARCHAR(150)  NOT NULL,
-    password            VARCHAR(255)  NOT NULL COMMENT 'bcrypt hash',
-    role                ENUM('admin','doctor','receptionist','cashier','pharmacist','patient')
-                        NOT NULL DEFAULT 'patient',
-    full_name           VARCHAR(100)  NOT NULL,
-    phone               VARCHAR(15)   NULL,
-    avatar_url          VARCHAR(500)  NULL,
-    is_active           TINYINT(1)    NOT NULL DEFAULT 1,
-    email_verified_at   DATETIME      NULL,
-    last_login          DATETIME      NULL,
-    created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_email (email),
-    INDEX idx_role (role)
+CREATE TABLE IF NOT EXISTS tai_khoan (
+    ma_tai_khoan            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    email                   VARCHAR(150) NOT NULL,
+    mat_khau                VARCHAR(255) NOT NULL COMMENT 'Chuoi bam bcrypt',
+    vai_tro                 ENUM('quan_tri','bac_si','duoc_si','benh_nhan')
+                            NOT NULL DEFAULT 'benh_nhan',
+    ho_ten                  VARCHAR(100) NOT NULL,
+    so_dien_thoai           VARCHAR(15) NULL,
+    anh_dai_dien            VARCHAR(500) NULL,
+    dang_hoat_dong          TINYINT(1) NOT NULL DEFAULT 1,
+    email_xac_thuc_luc      DATETIME NULL,
+    dang_nhap_cuoi_luc      DATETIME NULL,
+    tao_boi                 INT UNSIGNED NULL COMMENT 'Tai khoan quan tri tao tai khoan nay',
+    dat_lai_mat_khau_boi    INT UNSIGNED NULL COMMENT 'Tai khoan quan tri dat lai mat khau',
+    dat_lai_mat_khau_luc    DATETIME NULL,
+    buoc_doi_mat_khau       TINYINT(1) NOT NULL DEFAULT 0,
+    tao_luc                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cap_nhat_luc            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_tai_khoan),
+    UNIQUE KEY uq_tai_khoan_email (email),
+    INDEX idx_tai_khoan_vai_tro (vai_tro),
+    CONSTRAINT fk_tai_khoan_tao_boi
+        FOREIGN KEY (tao_boi) REFERENCES tai_khoan(ma_tai_khoan),
+    CONSTRAINT fk_tai_khoan_dat_lai_boi
+        FOREIGN KEY (dat_lai_mat_khau_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 2. patients — Hồ sơ bệnh nhân
+-- 2. benh_nhan - Ho so benh nhan
 -- ============================================================
-CREATE TABLE IF NOT EXISTS patients (
-    id                      INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    user_id                 INT UNSIGNED NULL,
-    patient_code            VARCHAR(20)  NOT NULL COMMENT 'Mã bệnh nhân duy nhất VD: BN-0001',
-    created_source          ENUM('self_register','frontdesk','phone','admin')
-                            NOT NULL DEFAULT 'self_register',
-    date_of_birth           DATE         NULL,
-    gender                  ENUM('male','female','other') NULL,
-    blood_type              VARCHAR(5)   NULL COMMENT 'A+, A-, B+, B-, O+, O-, AB+, AB-',
-    address                 TEXT         NULL,
-    insurance_number        VARCHAR(50)  NULL COMMENT 'Số BHYT',
-    insurance_expire        DATE         NULL,
-    occupation              VARCHAR(100) NULL,
-    emergency_contact_name  VARCHAR(100) NULL,
-    emergency_contact_phone VARCHAR(15)  NULL,
-    allergy_notes           TEXT         NULL COMMENT 'Ghi chú dị ứng thuốc',
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_user_id (user_id),
-    UNIQUE KEY uq_patient_code (patient_code),
-    INDEX idx_patient_code (patient_code),
-    CONSTRAINT fk_patients_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS benh_nhan (
+    ma_benh_nhan                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_tai_khoan                INT UNSIGNED NOT NULL,
+    ma_benh_nhan_he_thong       VARCHAR(20) NOT NULL COMMENT 'Vi du BN-0001',
+    nguon_tao                   ENUM('tu_dang_ky','quan_tri') NOT NULL DEFAULT 'tu_dang_ky',
+    ngay_sinh                   DATE NULL,
+    gioi_tinh                   ENUM('nam','nu','khac') NULL,
+    nhom_mau                    VARCHAR(5) NULL,
+    dia_chi                     TEXT NULL,
+    so_bhyt                     VARCHAR(50) NULL,
+    han_bhyt                    DATE NULL,
+    nghe_nghiep                 VARCHAR(100) NULL,
+    nguoi_lien_he_khan_cap      VARCHAR(100) NULL,
+    so_dien_thoai_khan_cap      VARCHAR(15) NULL,
+    ghi_chu_di_ung              TEXT NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_benh_nhan),
+    UNIQUE KEY uq_benh_nhan_tai_khoan (ma_tai_khoan),
+    UNIQUE KEY uq_benh_nhan_ma (ma_benh_nhan_he_thong),
+    INDEX idx_benh_nhan_ma (ma_benh_nhan_he_thong),
+    CONSTRAINT fk_benh_nhan_tai_khoan
+        FOREIGN KEY (ma_tai_khoan) REFERENCES tai_khoan(ma_tai_khoan) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 3. doctors — Thông tin bác sĩ
+-- 3. bac_si - Thong tin bac si
 -- ============================================================
-CREATE TABLE IF NOT EXISTS doctors (
-    id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    user_id           INT UNSIGNED NOT NULL,
-    specialty         VARCHAR(100) NOT NULL COMMENT 'Da liễu, Thẩm mỹ da...',
-    license_number    VARCHAR(50)  NOT NULL COMMENT 'Số chứng chỉ hành nghề',
-    degree            VARCHAR(100) NULL COMMENT 'Tiến sĩ, Thạc sĩ...',
-    experience_years  INT UNSIGNED NOT NULL DEFAULT 0,
-    consultation_fee  DECIMAL(12,0) NOT NULL DEFAULT 200000 COMMENT 'Phí khám (VNĐ)',
-    bio               TEXT         NULL,
-    is_available      TINYINT(1)   NOT NULL DEFAULT 1,
-    created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_doctor_user (user_id),
-    UNIQUE KEY uq_license (license_number),
-    CONSTRAINT fk_doctors_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS bac_si (
+    ma_bac_si                   INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_tai_khoan                INT UNSIGNED NOT NULL,
+    chuyen_khoa                 VARCHAR(100) NOT NULL COMMENT 'Da lieu, tham my da...',
+    so_chung_chi_hanh_nghe      VARCHAR(50) NOT NULL,
+    bang_cap                    VARCHAR(100) NULL,
+    so_nam_kinh_nghiem          INT UNSIGNED NOT NULL DEFAULT 0,
+    phi_kham                    DECIMAL(12,0) NOT NULL DEFAULT 200000,
+    gioi_thieu                  TEXT NULL,
+    dang_nhan_kham              TINYINT(1) NOT NULL DEFAULT 1,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_bac_si),
+    UNIQUE KEY uq_bac_si_tai_khoan (ma_tai_khoan),
+    UNIQUE KEY uq_bac_si_chung_chi (so_chung_chi_hanh_nghe),
+    CONSTRAINT fk_bac_si_tai_khoan
+        FOREIGN KEY (ma_tai_khoan) REFERENCES tai_khoan(ma_tai_khoan) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 4. doctor_schedules — Lịch làm việc bác sĩ
+-- 4. lich_lam_viec_bac_si - Lich lam viec do quan tri quan ly
 -- ============================================================
-CREATE TABLE IF NOT EXISTS doctor_schedules (
-    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    doctor_id       INT UNSIGNED NOT NULL,
-    day_of_week     TINYINT      NOT NULL COMMENT '0=CN, 1=T2, ..., 6=T7',
-    start_time      TIME         NOT NULL,
-    end_time        TIME         NOT NULL,
-    slot_duration   INT          NOT NULL DEFAULT 30 COMMENT 'Phút/lượt khám',
-    max_patients    INT          NOT NULL DEFAULT 20,
-    is_active       TINYINT(1)   NOT NULL DEFAULT 1,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_doctor_day (doctor_id, day_of_week, start_time),
-    CONSTRAINT fk_schedules_doctor FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS lich_lam_viec_bac_si (
+    ma_lich_lam_viec            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_bac_si                   INT UNSIGNED NOT NULL,
+    thu_trong_tuan              TINYINT NOT NULL COMMENT '0 = Chu nhat, 1 = Thu hai, ... 6 = Thu bay',
+    gio_bat_dau                 TIME NOT NULL,
+    gio_ket_thuc                TIME NOT NULL,
+    thoi_luong_moi_ca_phut      INT NOT NULL DEFAULT 30,
+    so_benh_nhan_toi_da         INT NOT NULL DEFAULT 20,
+    dang_ap_dung                TINYINT(1) NOT NULL DEFAULT 1,
+    quan_ly_boi                 INT UNSIGNED NOT NULL COMMENT 'Chi quan tri moi duoc cap nhat lich',
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cap_nhat_luc                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_lich_lam_viec),
+    UNIQUE KEY uq_lich_lam_viec_bac_si (ma_bac_si, thu_trong_tuan, gio_bat_dau),
+    CONSTRAINT fk_lich_lam_viec_bac_si
+        FOREIGN KEY (ma_bac_si) REFERENCES bac_si(ma_bac_si) ON DELETE CASCADE,
+    CONSTRAINT fk_lich_lam_viec_quan_tri
+        FOREIGN KEY (quan_ly_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 5. doctor_leave — Ngày nghỉ đột xuất
+-- 5. khoang_ban_bac_si - Khoang gio mau vang do quan tri danh dau
 -- ============================================================
-CREATE TABLE IF NOT EXISTS doctor_leave (
-    id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    doctor_id   INT UNSIGNED NOT NULL,
-    leave_date  DATE         NOT NULL,
-    reason      VARCHAR(200) NULL,
-    created_by  INT UNSIGNED NOT NULL COMMENT 'Admin/lễ tân ghi nhận',
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_doc_date (doctor_id, leave_date),
-    CONSTRAINT fk_leave_doctor  FOREIGN KEY (doctor_id)  REFERENCES doctors(id) ON DELETE CASCADE,
-    CONSTRAINT fk_leave_creator FOREIGN KEY (created_by) REFERENCES users(id)
+CREATE TABLE IF NOT EXISTS khoang_ban_bac_si (
+    ma_khoang_ban               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_bac_si                   INT UNSIGNED NOT NULL,
+    ngay_ap_dung                DATE NOT NULL,
+    gio_bat_dau                 TIME NOT NULL,
+    gio_ket_thuc                TIME NOT NULL,
+    ly_do                       VARCHAR(255) NULL,
+    tao_boi                     INT UNSIGNED NOT NULL COMMENT 'Quan tri tao khoang ban',
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_khoang_ban),
+    INDEX idx_khoang_ban_bac_si_ngay (ma_bac_si, ngay_ap_dung),
+    CONSTRAINT fk_khoang_ban_bac_si
+        FOREIGN KEY (ma_bac_si) REFERENCES bac_si(ma_bac_si) ON DELETE CASCADE,
+    CONSTRAINT fk_khoang_ban_tao_boi
+        FOREIGN KEY (tao_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 6. clinic_holidays — Ngày lễ / phòng khám đóng cửa
+-- 6. ngay_nghi_bac_si - Ngay nghi bac si do quan tri quan ly
 -- ============================================================
-CREATE TABLE IF NOT EXISTS clinic_holidays (
-    id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    holiday_date DATE         NOT NULL,
-    name         VARCHAR(100) NOT NULL COMMENT 'VD: Tết Nguyên Đán, 30/4...',
-    is_active    TINYINT(1)   NOT NULL DEFAULT 1,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_holiday_date (holiday_date)
+CREATE TABLE IF NOT EXISTS ngay_nghi_bac_si (
+    ma_ngay_nghi                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_bac_si                   INT UNSIGNED NOT NULL,
+    ngay_nghi                   DATE NOT NULL,
+    ly_do                       VARCHAR(200) NULL,
+    tao_boi                     INT UNSIGNED NOT NULL COMMENT 'Quan tri ghi nhan',
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_ngay_nghi),
+    UNIQUE KEY uq_ngay_nghi_bac_si (ma_bac_si, ngay_nghi),
+    CONSTRAINT fk_ngay_nghi_bac_si
+        FOREIGN KEY (ma_bac_si) REFERENCES bac_si(ma_bac_si) ON DELETE CASCADE,
+    CONSTRAINT fk_ngay_nghi_tao_boi
+        FOREIGN KEY (tao_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 7. services — Dịch vụ khám
+-- 7. ngay_nghi_phong_kham - Ngay nghi toan phong kham
 -- ============================================================
-CREATE TABLE IF NOT EXISTS services (
-    id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    name        VARCHAR(200) NOT NULL,
-    category    VARCHAR(100) NULL COMMENT 'Điều trị mụn, Laser, Chăm sóc da...',
-    description TEXT         NULL,
-    price       DECIMAL(12,0) NOT NULL DEFAULT 0,
-    duration    INT          NOT NULL DEFAULT 30 COMMENT 'Thời gian thực hiện (phút)',
-    is_active   TINYINT(1)   NOT NULL DEFAULT 1,
-    image_url   VARCHAR(500) NULL,
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+CREATE TABLE IF NOT EXISTS ngay_nghi_phong_kham (
+    ma_ngay_nghi_phong          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ngay_nghi                   DATE NOT NULL,
+    ten_ngay_nghi               VARCHAR(100) NOT NULL,
+    dang_ap_dung                TINYINT(1) NOT NULL DEFAULT 1,
+    PRIMARY KEY (ma_ngay_nghi_phong),
+    UNIQUE KEY uq_ngay_nghi_phong_kham (ngay_nghi)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 8. appointments — Lịch hẹn
+-- 8. dich_vu - Danh muc dich vu
 -- ============================================================
-CREATE TABLE IF NOT EXISTS appointments (
-    id                              INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    patient_id                      INT UNSIGNED NOT NULL,
-    doctor_id                       INT UNSIGNED NOT NULL,
-    primary_service_id              INT UNSIGNED NULL COMMENT 'Dịch vụ chính',
-    visit_type                      ENUM('scheduled','walk_in','follow_up')
-                                    NOT NULL DEFAULT 'scheduled',
-    booking_source                  ENUM('patient_app','phone','frontdesk','admin')
-                                    NOT NULL DEFAULT 'patient_app',
-    appointment_date                DATE         NOT NULL,
-    appointment_time                TIME         NOT NULL,
-    duration_minutes                INT          NOT NULL DEFAULT 30,
-    status                          ENUM('pending','confirmed','checked_in','in_progress',
-                                         'completed','cancelled','no_show')
-                                    NOT NULL DEFAULT 'pending',
-    queue_number                    INT          NULL COMMENT 'Số thứ tự trong ngày',
-    chief_complaint                 TEXT         NULL COMMENT 'Lý do khám / triệu chứng chính',
-    cancel_reason                   TEXT         NULL,
-    cancelled_by                    INT UNSIGNED NULL,
-    cancelled_at                    DATETIME     NULL,
-    confirmed_at                    DATETIME     NULL,
-    checked_in_at                   DATETIME     NULL,
-    started_at                      DATETIME     NULL,
-    completed_at                    DATETIME     NULL,
-    no_show_marked_at               DATETIME     NULL,
-    rescheduled_from_id             INT UNSIGNED NULL COMMENT 'Lịch gốc nếu là lịch đổi',
-    follow_up_from_appointment_id   INT UNSIGNED NULL COMMENT 'Lịch khám trước nếu là tái khám',
-    reminder_24h_sent               TINYINT(1)   NOT NULL DEFAULT 0,
-    reminder_2h_sent                TINYINT(1)   NOT NULL DEFAULT 0,
-    notes                           TEXT         NULL COMMENT 'Ghi chú của lễ tân',
-    created_at                      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at                      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    INDEX idx_date_doctor   (appointment_date, doctor_id),
-    INDEX idx_patient       (patient_id),
-    INDEX idx_status        (status),
-    CONSTRAINT fk_appt_patient         FOREIGN KEY (patient_id)                    REFERENCES patients(id),
-    CONSTRAINT fk_appt_doctor          FOREIGN KEY (doctor_id)                     REFERENCES doctors(id),
-    CONSTRAINT fk_appt_service         FOREIGN KEY (primary_service_id)            REFERENCES services(id),
-    CONSTRAINT fk_appt_cancelled_by    FOREIGN KEY (cancelled_by)                  REFERENCES users(id),
-    CONSTRAINT fk_appt_rescheduled     FOREIGN KEY (rescheduled_from_id)           REFERENCES appointments(id),
-    CONSTRAINT fk_appt_follow_up       FOREIGN KEY (follow_up_from_appointment_id) REFERENCES appointments(id)
+CREATE TABLE IF NOT EXISTS dich_vu (
+    ma_dich_vu                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ten_dich_vu                 VARCHAR(200) NOT NULL,
+    nhom_dich_vu                VARCHAR(100) NULL,
+    mo_ta                       TEXT NULL,
+    gia_dich_vu                 DECIMAL(12,0) NOT NULL DEFAULT 0,
+    thoi_luong_phut             INT NOT NULL DEFAULT 30,
+    dang_ap_dung                TINYINT(1) NOT NULL DEFAULT 1,
+    hinh_anh                    VARCHAR(500) NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_dich_vu)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 9. appointment_services — Dịch vụ thực hiện trong buổi khám
+-- 9. lich_hen - Lich hen kham
 -- ============================================================
-CREATE TABLE IF NOT EXISTS appointment_services (
-    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    appointment_id  INT UNSIGNED NOT NULL,
-    service_id      INT UNSIGNED NOT NULL,
-    quantity        INT          NOT NULL DEFAULT 1,
-    unit_price      DECIMAL(12,0) NOT NULL DEFAULT 0 COMMENT 'Snapshot giá tại thời điểm',
-    added_by        INT UNSIGNED NOT NULL COMMENT 'user_id người thêm dịch vụ',
-    added_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    notes           TEXT         NULL,
-    PRIMARY KEY (id),
-    INDEX idx_appt_svc_appointment (appointment_id),
-    CONSTRAINT fk_appt_svc_appointment FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
-    CONSTRAINT fk_appt_svc_service     FOREIGN KEY (service_id)     REFERENCES services(id),
-    CONSTRAINT fk_appt_svc_added_by    FOREIGN KEY (added_by)       REFERENCES users(id)
+CREATE TABLE IF NOT EXISTS lich_hen (
+    ma_lich_hen                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_benh_nhan                INT UNSIGNED NOT NULL,
+    ma_bac_si                   INT UNSIGNED NOT NULL,
+    ma_dich_vu_chinh            INT UNSIGNED NULL,
+    loai_luot_kham              ENUM('dat_truoc','tai_kham') NOT NULL DEFAULT 'dat_truoc',
+    nguon_dat                   ENUM('ung_dung_benh_nhan','quan_tri','bac_si')
+                                NOT NULL DEFAULT 'ung_dung_benh_nhan',
+    ngay_kham                   DATE NOT NULL,
+    gio_kham                    TIME NOT NULL,
+    thoi_luong_phut             INT NOT NULL DEFAULT 30,
+    trang_thai                  ENUM('cho_duyet','da_xac_nhan','da_den','dang_kham','hoan_tat','da_huy','vang_mat')
+                                NOT NULL DEFAULT 'cho_duyet',
+    so_thu_tu                   INT NULL,
+    ly_do_kham                  TEXT NULL,
+    ly_do_huy                   TEXT NULL,
+    huy_boi                     INT UNSIGNED NULL,
+    huy_luc                     DATETIME NULL,
+    xac_nhan_luc                DATETIME NULL,
+    ghi_chu_bac_si              TEXT NULL,
+    ngay_de_xuat_moi            DATE NULL,
+    gio_de_xuat_moi             TIME NULL,
+    phan_tram_uu_dai            DECIMAL(5,2) NOT NULL DEFAULT 0,
+    ghi_chu_uu_dai              VARCHAR(255) NULL,
+    da_den_luc                  DATETIME NULL,
+    bat_dau_kham_luc            DATETIME NULL,
+    hoan_tat_luc                DATETIME NULL,
+    danh_dau_vang_mat_luc       DATETIME NULL,
+    doi_tu_lich_hen             INT UNSIGNED NULL COMMENT 'Lich goc neu doi lich',
+    tai_kham_tu_lich_hen        INT UNSIGNED NULL,
+    gui_nhac_24h                TINYINT(1) NOT NULL DEFAULT 0,
+    gui_nhac_2h                 TINYINT(1) NOT NULL DEFAULT 0,
+    ghi_chu_chung               TEXT NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cap_nhat_luc                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_lich_hen),
+    INDEX idx_lich_hen_ngay_bac_si (ngay_kham, ma_bac_si),
+    INDEX idx_lich_hen_benh_nhan (ma_benh_nhan),
+    INDEX idx_lich_hen_trang_thai (trang_thai),
+    CONSTRAINT fk_lich_hen_benh_nhan
+        FOREIGN KEY (ma_benh_nhan) REFERENCES benh_nhan(ma_benh_nhan),
+    CONSTRAINT fk_lich_hen_bac_si
+        FOREIGN KEY (ma_bac_si) REFERENCES bac_si(ma_bac_si),
+    CONSTRAINT fk_lich_hen_dich_vu
+        FOREIGN KEY (ma_dich_vu_chinh) REFERENCES dich_vu(ma_dich_vu),
+    CONSTRAINT fk_lich_hen_huy_boi
+        FOREIGN KEY (huy_boi) REFERENCES tai_khoan(ma_tai_khoan),
+    CONSTRAINT fk_lich_hen_doi_tu
+        FOREIGN KEY (doi_tu_lich_hen) REFERENCES lich_hen(ma_lich_hen),
+    CONSTRAINT fk_lich_hen_tai_kham_tu
+        FOREIGN KEY (tai_kham_tu_lich_hen) REFERENCES lich_hen(ma_lich_hen)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 10. medical_records — Hồ sơ bệnh án
+-- 10. dich_vu_lich_hen - Dich vu phat sinh trong buoi kham
 -- ============================================================
-CREATE TABLE IF NOT EXISTS medical_records (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    appointment_id      INT UNSIGNED NOT NULL,
-    patient_id          INT UNSIGNED NOT NULL,
-    doctor_id           INT UNSIGNED NOT NULL,
-    symptoms            TEXT         NULL COMMENT 'Triệu chứng bệnh nhân mô tả',
-    clinical_findings   TEXT         NULL COMMENT 'Kết quả thăm khám lâm sàng',
-    diagnosis           VARCHAR(500) NOT NULL COMMENT 'Chẩn đoán bệnh',
-    icd10_code          VARCHAR(20)  NULL COMMENT 'Mã ICD-10',
-    treatment_plan      TEXT         NULL COMMENT 'Phác đồ điều trị',
-    follow_up_date      DATE         NULL COMMENT 'Ngày tái khám',
-    follow_up_notes     TEXT         NULL,
-    doctor_notes        TEXT         NULL COMMENT 'Ghi chú riêng của bác sĩ',
-    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_appointment (appointment_id),
-    INDEX idx_mr_patient (patient_id),
-    INDEX idx_mr_created (created_at),
-    CONSTRAINT fk_mr_appointment FOREIGN KEY (appointment_id) REFERENCES appointments(id),
-    CONSTRAINT fk_mr_patient     FOREIGN KEY (patient_id)     REFERENCES patients(id),
-    CONSTRAINT fk_mr_doctor      FOREIGN KEY (doctor_id)      REFERENCES doctors(id)
+CREATE TABLE IF NOT EXISTS dich_vu_lich_hen (
+    ma_dich_vu_lich_hen         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_lich_hen                 INT UNSIGNED NOT NULL,
+    ma_dich_vu                  INT UNSIGNED NOT NULL,
+    so_luong                    INT NOT NULL DEFAULT 1,
+    don_gia                     DECIMAL(12,0) NOT NULL DEFAULT 0,
+    them_boi                    INT UNSIGNED NOT NULL COMMENT 'Bac si hoac quan tri them',
+    them_luc                    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ghi_chu                     TEXT NULL,
+    PRIMARY KEY (ma_dich_vu_lich_hen),
+    INDEX idx_dich_vu_lich_hen_lich_hen (ma_lich_hen),
+    CONSTRAINT fk_dv_lich_hen_lich_hen
+        FOREIGN KEY (ma_lich_hen) REFERENCES lich_hen(ma_lich_hen) ON DELETE CASCADE,
+    CONSTRAINT fk_dv_lich_hen_dich_vu
+        FOREIGN KEY (ma_dich_vu) REFERENCES dich_vu(ma_dich_vu),
+    CONSTRAINT fk_dv_lich_hen_them_boi
+        FOREIGN KEY (them_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 11. medicines — Danh mục thuốc
+-- 11. ho_so_benh_an - Ho so benh an
 -- ============================================================
-CREATE TABLE IF NOT EXISTS medicines (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    name                VARCHAR(200) NOT NULL,
-    generic_name        VARCHAR(200) NULL COMMENT 'Tên hoạt chất',
-    category            VARCHAR(100) NULL COMMENT 'Kháng sinh, Corticoid, Kem bôi...',
-    unit                VARCHAR(20)  NOT NULL COMMENT 'Viên, Lọ, Tuýp, ml...',
-    price_per_unit      DECIMAL(12,0) NOT NULL DEFAULT 0,
-    current_stock       INT          NOT NULL DEFAULT 0,
-    reorder_level       INT          NOT NULL DEFAULT 50 COMMENT 'Cảnh báo khi tồn kho < mức này',
-    manufacturer        VARCHAR(200) NULL,
-    storage_conditions  VARCHAR(200) NULL,
-    description         TEXT         NULL,
-    is_active           TINYINT(1)   NOT NULL DEFAULT 1,
-    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    INDEX idx_med_name     (name),
-    INDEX idx_med_category (category),
-    INDEX idx_med_stock    (current_stock)
+CREATE TABLE IF NOT EXISTS ho_so_benh_an (
+    ma_ho_so_benh_an            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_lich_hen                 INT UNSIGNED NOT NULL,
+    ma_benh_nhan                INT UNSIGNED NOT NULL,
+    ma_bac_si                   INT UNSIGNED NOT NULL,
+    trieu_chung                 TEXT NULL,
+    ket_qua_tham_kham           TEXT NULL,
+    chan_doan                   VARCHAR(500) NOT NULL,
+    ma_icd10                    VARCHAR(20) NULL,
+    phac_do_dieu_tri            TEXT NULL,
+    ngay_tai_kham               DATE NULL,
+    ghi_chu_tai_kham            TEXT NULL,
+    ghi_chu_bac_si              TEXT NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cap_nhat_luc                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_ho_so_benh_an),
+    UNIQUE KEY uq_ho_so_benh_an_lich_hen (ma_lich_hen),
+    INDEX idx_ho_so_benh_an_benh_nhan (ma_benh_nhan),
+    CONSTRAINT fk_ho_so_benh_an_lich_hen
+        FOREIGN KEY (ma_lich_hen) REFERENCES lich_hen(ma_lich_hen),
+    CONSTRAINT fk_ho_so_benh_an_benh_nhan
+        FOREIGN KEY (ma_benh_nhan) REFERENCES benh_nhan(ma_benh_nhan),
+    CONSTRAINT fk_ho_so_benh_an_bac_si
+        FOREIGN KEY (ma_bac_si) REFERENCES bac_si(ma_bac_si)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 12. medicine_batches — Lô nhập thuốc
+-- 12. nha_cung_cap - Danh sach nha cung cap thuoc
 -- ============================================================
-CREATE TABLE IF NOT EXISTS medicine_batches (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    medicine_id         INT UNSIGNED NOT NULL,
-    batch_number        VARCHAR(100) NOT NULL,
-    expiry_date         DATE         NOT NULL,
-    import_quantity     INT          NOT NULL,
-    remaining_quantity  INT          NOT NULL,
-    reserved_quantity   INT          NOT NULL DEFAULT 0 COMMENT 'Đã đặt chờ xuất',
-    import_unit_cost    DECIMAL(12,0) NOT NULL DEFAULT 0,
-    supplier_name       VARCHAR(200) NULL,
-    imported_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    is_active           TINYINT(1)   NOT NULL DEFAULT 1,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_batch (medicine_id, batch_number),
-    INDEX idx_batch_expiry    (expiry_date),
-    INDEX idx_batch_remaining (remaining_quantity),
-    CONSTRAINT fk_batch_medicine FOREIGN KEY (medicine_id) REFERENCES medicines(id)
+CREATE TABLE IF NOT EXISTS nha_cung_cap (
+    ma_nha_cung_cap             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ten_nha_cung_cap            VARCHAR(200) NOT NULL,
+    nguoi_lien_he               VARCHAR(150) NULL,
+    so_dien_thoai               VARCHAR(15) NULL,
+    email                       VARCHAR(150) NULL,
+    dia_chi                     TEXT NULL,
+    ma_so_thue                  VARCHAR(50) NULL,
+    ghi_chu                     TEXT NULL,
+    dang_hop_tac                TINYINT(1) NOT NULL DEFAULT 1,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cap_nhat_luc                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_nha_cung_cap),
+    UNIQUE KEY uq_nha_cung_cap_ten (ten_nha_cung_cap)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 13. prescriptions — Đơn thuốc
+-- 13. thuoc - Danh muc thuoc
 -- ============================================================
-CREATE TABLE IF NOT EXISTS prescriptions (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    medical_record_id   INT UNSIGNED NOT NULL,
-    doctor_id           INT UNSIGNED NOT NULL,
-    patient_id          INT UNSIGNED NOT NULL,
-    status              ENUM('pending','prepared','awaiting_payment',
-                             'partially_dispensed','dispensed','cancelled')
-                        NOT NULL DEFAULT 'pending',
-    prepared_by         INT UNSIGNED NULL COMMENT 'Dược sĩ chuẩn bị thuốc',
-    prepared_at         DATETIME     NULL,
-    dispensed_by        INT UNSIGNED NULL COMMENT 'Dược sĩ xuất thuốc',
-    dispensed_at        DATETIME     NULL,
-    picked_up_at        DATETIME     NULL COMMENT 'Bệnh nhân đã nhận thuốc',
-    notes               TEXT         NULL,
-    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_medical_record (medical_record_id),
-    CONSTRAINT fk_presc_mr          FOREIGN KEY (medical_record_id) REFERENCES medical_records(id),
-    CONSTRAINT fk_presc_doctor      FOREIGN KEY (doctor_id)         REFERENCES doctors(id),
-    CONSTRAINT fk_presc_patient     FOREIGN KEY (patient_id)        REFERENCES patients(id),
-    CONSTRAINT fk_presc_prepared_by FOREIGN KEY (prepared_by)       REFERENCES users(id),
-    CONSTRAINT fk_presc_dispensed   FOREIGN KEY (dispensed_by)      REFERENCES users(id)
+CREATE TABLE IF NOT EXISTS thuoc (
+    ma_thuoc                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ten_thuoc                   VARCHAR(200) NOT NULL,
+    ten_hoat_chat               VARCHAR(200) NULL,
+    nhom_thuoc                  VARCHAR(100) NULL,
+    don_vi_tinh                 VARCHAR(20) NOT NULL,
+    gia_ban_don_vi              DECIMAL(12,0) NOT NULL DEFAULT 0,
+    ton_kho_hien_tai            INT NOT NULL DEFAULT 0,
+    muc_canh_bao_ton_kho        INT NOT NULL DEFAULT 50,
+    hang_san_xuat               VARCHAR(200) NULL,
+    dieu_kien_bao_quan          VARCHAR(200) NULL,
+    mo_ta                       TEXT NULL,
+    dang_ap_dung                TINYINT(1) NOT NULL DEFAULT 1,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cap_nhat_luc                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_thuoc),
+    INDEX idx_thuoc_ten (ten_thuoc),
+    INDEX idx_thuoc_nhom (nhom_thuoc),
+    INDEX idx_thuoc_ton_kho (ton_kho_hien_tai)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 14. prescription_items — Chi tiết đơn thuốc
+-- 14. lo_thuoc - Lo nhap thuoc
 -- ============================================================
-CREATE TABLE IF NOT EXISTS prescription_items (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    prescription_id     INT UNSIGNED NOT NULL,
-    medicine_id         INT UNSIGNED NOT NULL,
-    quantity            INT          NOT NULL COMMENT 'Số lượng kê',
-    reserved_quantity   INT          NOT NULL DEFAULT 0 COMMENT 'Đã giữ kho',
-    dispensed_quantity  INT          NOT NULL DEFAULT 0 COMMENT 'Đã giao thực tế',
-    dosage              VARCHAR(100) NOT NULL COMMENT 'Liều dùng VD: 1 viên',
-    frequency           VARCHAR(100) NOT NULL COMMENT 'Tần suất VD: 2 lần/ngày',
-    duration_days       INT          NULL COMMENT 'Số ngày dùng',
-    instruction         TEXT         NULL COMMENT 'Trước/sau ăn, cách dùng...',
-    unit_price          DECIMAL(12,0) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    CONSTRAINT fk_pi_prescription FOREIGN KEY (prescription_id) REFERENCES prescriptions(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pi_medicine     FOREIGN KEY (medicine_id)     REFERENCES medicines(id)
+CREATE TABLE IF NOT EXISTS lo_thuoc (
+    ma_lo_thuoc                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_thuoc                    INT UNSIGNED NOT NULL,
+    ma_nha_cung_cap             INT UNSIGNED NOT NULL,
+    so_lo                       VARCHAR(100) NOT NULL,
+    han_su_dung                 DATE NOT NULL,
+    so_luong_nhap               INT NOT NULL,
+    so_luong_con_lai            INT NOT NULL,
+    so_luong_giu_cho            INT NOT NULL DEFAULT 0,
+    gia_nhap_don_vi             DECIMAL(12,0) NOT NULL DEFAULT 0,
+    nhap_luc                    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    dang_ap_dung                TINYINT(1) NOT NULL DEFAULT 1,
+    PRIMARY KEY (ma_lo_thuoc),
+    UNIQUE KEY uq_lo_thuoc (ma_thuoc, so_lo),
+    INDEX idx_lo_thuoc_han_su_dung (han_su_dung),
+    INDEX idx_lo_thuoc_con_lai (so_luong_con_lai),
+    CONSTRAINT fk_lo_thuoc_thuoc
+        FOREIGN KEY (ma_thuoc) REFERENCES thuoc(ma_thuoc),
+    CONSTRAINT fk_lo_thuoc_nha_cung_cap
+        FOREIGN KEY (ma_nha_cung_cap) REFERENCES nha_cung_cap(ma_nha_cung_cap)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 15. prescription_item_allocations — Phân bổ lô thuốc cho từng dòng đơn
+-- 15. don_thuoc - Don thuoc bac si gui sang duoc si
 -- ============================================================
-CREATE TABLE IF NOT EXISTS prescription_item_allocations (
-    id                      INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    prescription_item_id    INT UNSIGNED NOT NULL,
-    batch_id                INT UNSIGNED NOT NULL,
-    reserved_quantity       INT          NOT NULL DEFAULT 0,
-    dispensed_quantity      INT          NOT NULL DEFAULT 0,
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_item_batch (prescription_item_id, batch_id),
-    CONSTRAINT fk_pia_item  FOREIGN KEY (prescription_item_id) REFERENCES prescription_items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pia_batch FOREIGN KEY (batch_id)             REFERENCES medicine_batches(id)
+CREATE TABLE IF NOT EXISTS don_thuoc (
+    ma_don_thuoc                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_ho_so_benh_an            INT UNSIGNED NOT NULL,
+    ma_bac_si                   INT UNSIGNED NOT NULL,
+    ma_benh_nhan                INT UNSIGNED NOT NULL,
+    trang_thai                  ENUM('cho_xu_ly','da_chuan_bi','cho_thanh_toan','giao_mot_phan','da_giao','da_huy')
+                                NOT NULL DEFAULT 'cho_xu_ly',
+    chuan_bi_boi                INT UNSIGNED NULL COMMENT 'Duoc si chuan bi thuoc',
+    chuan_bi_luc                DATETIME NULL,
+    giao_boi                    INT UNSIGNED NULL COMMENT 'Duoc si giao thuoc',
+    giao_luc                    DATETIME NULL,
+    nhan_thuoc_luc              DATETIME NULL,
+    ghi_chu                     TEXT NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_don_thuoc),
+    UNIQUE KEY uq_don_thuoc_ho_so (ma_ho_so_benh_an),
+    CONSTRAINT fk_don_thuoc_ho_so_benh_an
+        FOREIGN KEY (ma_ho_so_benh_an) REFERENCES ho_so_benh_an(ma_ho_so_benh_an),
+    CONSTRAINT fk_don_thuoc_bac_si
+        FOREIGN KEY (ma_bac_si) REFERENCES bac_si(ma_bac_si),
+    CONSTRAINT fk_don_thuoc_benh_nhan
+        FOREIGN KEY (ma_benh_nhan) REFERENCES benh_nhan(ma_benh_nhan),
+    CONSTRAINT fk_don_thuoc_chuan_bi_boi
+        FOREIGN KEY (chuan_bi_boi) REFERENCES tai_khoan(ma_tai_khoan),
+    CONSTRAINT fk_don_thuoc_giao_boi
+        FOREIGN KEY (giao_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 16. invoices — Hóa đơn
+-- 16. chi_tiet_don_thuoc - Tung dong thuoc trong don
 -- ============================================================
-CREATE TABLE IF NOT EXISTS invoices (
-    id                      INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    appointment_id          INT UNSIGNED NOT NULL,
-    patient_id              INT UNSIGNED NOT NULL,
-    cashier_id              INT UNSIGNED NULL COMMENT 'Thu ngân tạo hóa đơn',
-    invoice_number          VARCHAR(20)  NOT NULL COMMENT 'PKD-2026-0001',
-    invoice_status          ENUM('draft','issued','partially_paid','paid','cancelled','refunded')
-                            NOT NULL DEFAULT 'draft',
-    subtotal_amount         DECIMAL(12,0) NOT NULL DEFAULT 0,
-    discount_amount         DECIMAL(12,0) NOT NULL DEFAULT 0,
-    discount_reason         VARCHAR(200) NULL,
-    approved_discount_by    INT UNSIGNED NULL COMMENT 'Người duyệt giảm giá',
-    insurance_support_amount DECIMAL(12,0) NOT NULL DEFAULT 0 COMMENT 'Mức hỗ trợ BHYT nhập tay',
-    total_amount            DECIMAL(12,0) NOT NULL DEFAULT 0,
-    paid_amount             DECIMAL(12,0) NOT NULL DEFAULT 0,
-    payment_status          ENUM('unpaid','awaiting_confirmation','partial','paid',
-                                 'credit_approved','refunded')
-                            NOT NULL DEFAULT 'unpaid',
-    credit_approved_by      INT UNSIGNED NULL,
-    credit_approved_at      DATETIME     NULL,
-    locked_at               DATETIME     NULL,
-    notes                   TEXT         NULL,
-    paid_at                 DATETIME     NULL,
-    created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_appointment     (appointment_id),
-    UNIQUE KEY uq_invoice_number  (invoice_number),
-    INDEX idx_inv_patient (patient_id),
-    INDEX idx_inv_status  (payment_status),
-    INDEX idx_inv_created (created_at),
-    CONSTRAINT fk_inv_appointment      FOREIGN KEY (appointment_id)       REFERENCES appointments(id),
-    CONSTRAINT fk_inv_patient          FOREIGN KEY (patient_id)           REFERENCES patients(id),
-    CONSTRAINT fk_inv_cashier          FOREIGN KEY (cashier_id)           REFERENCES users(id),
-    CONSTRAINT fk_inv_discount_approver FOREIGN KEY (approved_discount_by) REFERENCES users(id),
-    CONSTRAINT fk_inv_credit_approver  FOREIGN KEY (credit_approved_by)   REFERENCES users(id)
+CREATE TABLE IF NOT EXISTS chi_tiet_don_thuoc (
+    ma_chi_tiet_don_thuoc       INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_don_thuoc                INT UNSIGNED NOT NULL,
+    ma_thuoc                    INT UNSIGNED NOT NULL,
+    so_luong_ke                 INT NOT NULL,
+    so_luong_giu_cho            INT NOT NULL DEFAULT 0,
+    so_luong_giao               INT NOT NULL DEFAULT 0,
+    lieu_dung                   VARCHAR(100) NOT NULL,
+    tan_suat                    VARCHAR(100) NOT NULL,
+    so_ngay_dung                INT NULL,
+    huong_dan_su_dung           TEXT NULL,
+    don_gia                     DECIMAL(12,0) NOT NULL DEFAULT 0,
+    PRIMARY KEY (ma_chi_tiet_don_thuoc),
+    CONSTRAINT fk_chi_tiet_don_thuoc_don
+        FOREIGN KEY (ma_don_thuoc) REFERENCES don_thuoc(ma_don_thuoc) ON DELETE CASCADE,
+    CONSTRAINT fk_chi_tiet_don_thuoc_thuoc
+        FOREIGN KEY (ma_thuoc) REFERENCES thuoc(ma_thuoc)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 17. invoice_items — Dòng chi tiết hóa đơn
+-- 17. phan_bo_lo_don_thuoc - Phan bo lo cho tung dong don thuoc
 -- ============================================================
-CREATE TABLE IF NOT EXISTS invoice_items (
-    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    invoice_id      INT UNSIGNED NOT NULL,
-    item_type       VARCHAR(20)  NOT NULL COMMENT 'exam | service | medicine | other',
-    reference_id    INT UNSIGNED NULL COMMENT 'service_id / prescription_item_id...',
-    description     VARCHAR(255) NOT NULL,
-    quantity        INT          NOT NULL DEFAULT 1,
-    unit_price      DECIMAL(12,0) NOT NULL DEFAULT 0,
-    line_total      DECIMAL(12,0) NOT NULL DEFAULT 0,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    INDEX idx_ii_invoice (invoice_id),
-    CONSTRAINT fk_ii_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS phan_bo_lo_don_thuoc (
+    ma_phan_bo                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_chi_tiet_don_thuoc       INT UNSIGNED NOT NULL,
+    ma_lo_thuoc                 INT UNSIGNED NOT NULL,
+    so_luong_giu_cho            INT NOT NULL DEFAULT 0,
+    so_luong_giao               INT NOT NULL DEFAULT 0,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_phan_bo),
+    UNIQUE KEY uq_phan_bo_lo_don_thuoc (ma_chi_tiet_don_thuoc, ma_lo_thuoc),
+    CONSTRAINT fk_phan_bo_chi_tiet_don_thuoc
+        FOREIGN KEY (ma_chi_tiet_don_thuoc) REFERENCES chi_tiet_don_thuoc(ma_chi_tiet_don_thuoc) ON DELETE CASCADE,
+    CONSTRAINT fk_phan_bo_lo_thuoc
+        FOREIGN KEY (ma_lo_thuoc) REFERENCES lo_thuoc(ma_lo_thuoc)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 18. payment_transactions — Giao dịch thanh toán
+-- 18. hoa_don - Hoa don do duoc si lap va thu tien
 -- ============================================================
-CREATE TABLE IF NOT EXISTS payment_transactions (
-    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    invoice_id          INT UNSIGNED NOT NULL,
-    transaction_type    ENUM('payment','refund') NOT NULL DEFAULT 'payment',
-    payment_method      ENUM('cash','card','transfer','insurance_support','other') NOT NULL,
-    amount              DECIMAL(12,0) NOT NULL DEFAULT 0,
-    transaction_ref     VARCHAR(100) NULL COMMENT 'Mã giao dịch ngân hàng/POS',
-    status              ENUM('pending','success','failed','cancelled') NOT NULL DEFAULT 'success',
-    created_by          INT UNSIGNED NOT NULL,
-    approved_by         INT UNSIGNED NULL COMMENT 'Duyệt hoàn tiền hoặc GD nhạy cảm',
-    paid_at             DATETIME     NULL,
-    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    INDEX idx_pt_invoice (invoice_id),
-    INDEX idx_pt_paid_at (paid_at),
-    CONSTRAINT fk_pt_invoice     FOREIGN KEY (invoice_id)  REFERENCES invoices(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pt_created_by  FOREIGN KEY (created_by)  REFERENCES users(id),
-    CONSTRAINT fk_pt_approved_by FOREIGN KEY (approved_by) REFERENCES users(id)
+CREATE TABLE IF NOT EXISTS hoa_don (
+    ma_hoa_don                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_lich_hen                 INT UNSIGNED NOT NULL,
+    ma_benh_nhan                INT UNSIGNED NOT NULL,
+    ma_duoc_si                  INT UNSIGNED NULL COMMENT 'Duoc si lap hoa don va thu tien',
+    so_hoa_don                  VARCHAR(20) NOT NULL COMMENT 'PKDL-2026-0001',
+    trang_thai_hoa_don          ENUM('nhap','da_lap','thanh_toan_mot_phan','da_thanh_toan','da_huy','da_hoan_tien')
+                                NOT NULL DEFAULT 'nhap',
+    tam_tinh                    DECIMAL(12,0) NOT NULL DEFAULT 0,
+    so_tien_giam                DECIMAL(12,0) NOT NULL DEFAULT 0,
+    ly_do_giam                  VARCHAR(200) NULL,
+    duyet_giam_gia_boi          INT UNSIGNED NULL,
+    so_tien_ho_tro              DECIMAL(12,0) NOT NULL DEFAULT 0,
+    tong_thanh_toan             DECIMAL(12,0) NOT NULL DEFAULT 0,
+    da_thu                      DECIMAL(12,0) NOT NULL DEFAULT 0,
+    trang_thai_thanh_toan       ENUM('chua_thanh_toan','thanh_toan_mot_phan','da_thanh_toan','da_hoan_tien')
+                                NOT NULL DEFAULT 'chua_thanh_toan',
+    ghi_chu                     TEXT NULL,
+    thanh_toan_luc              DATETIME NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_hoa_don),
+    UNIQUE KEY uq_hoa_don_lich_hen (ma_lich_hen),
+    UNIQUE KEY uq_hoa_don_so (so_hoa_don),
+    INDEX idx_hoa_don_benh_nhan (ma_benh_nhan),
+    INDEX idx_hoa_don_trang_thai (trang_thai_thanh_toan),
+    CONSTRAINT fk_hoa_don_lich_hen
+        FOREIGN KEY (ma_lich_hen) REFERENCES lich_hen(ma_lich_hen),
+    CONSTRAINT fk_hoa_don_benh_nhan
+        FOREIGN KEY (ma_benh_nhan) REFERENCES benh_nhan(ma_benh_nhan),
+    CONSTRAINT fk_hoa_don_duoc_si
+        FOREIGN KEY (ma_duoc_si) REFERENCES tai_khoan(ma_tai_khoan),
+    CONSTRAINT fk_hoa_don_duyet_giam_gia_boi
+        FOREIGN KEY (duyet_giam_gia_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 19. inventory_logs — Lịch sử xuất nhập kho
+-- 19. chi_tiet_hoa_don - Tung dong chi phi
 -- ============================================================
-CREATE TABLE IF NOT EXISTS inventory_logs (
-    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    medicine_id     INT UNSIGNED NOT NULL,
-    batch_id        INT UNSIGNED NULL COMMENT 'Lô bị tác động',
-    user_id         INT UNSIGNED NOT NULL COMMENT 'Người thực hiện',
-    action          ENUM('import','export','adjust','expired','import_return') NOT NULL,
-    quantity_change INT          NOT NULL COMMENT 'Dương = nhập, Âm = xuất',
-    quantity_before INT          NOT NULL,
-    quantity_after  INT          NOT NULL,
-    reference_id    INT UNSIGNED NULL COMMENT 'prescription_id nếu xuất theo đơn',
-    reference_type  VARCHAR(50)  NULL,
-    notes           TEXT         NULL,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    CONSTRAINT fk_il_medicine FOREIGN KEY (medicine_id) REFERENCES medicines(id),
-    CONSTRAINT fk_il_batch    FOREIGN KEY (batch_id)    REFERENCES medicine_batches(id),
-    CONSTRAINT fk_il_user     FOREIGN KEY (user_id)     REFERENCES users(id)
+CREATE TABLE IF NOT EXISTS chi_tiet_hoa_don (
+    ma_chi_tiet_hoa_don         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_hoa_don                  INT UNSIGNED NOT NULL,
+    loai_muc                    ENUM('phi_kham','dich_vu','thuoc','khac') NOT NULL,
+    ma_tham_chieu               INT UNSIGNED NULL,
+    dien_giai                   VARCHAR(255) NOT NULL,
+    so_luong                    INT NOT NULL DEFAULT 1,
+    don_gia                     DECIMAL(12,0) NOT NULL DEFAULT 0,
+    thanh_tien                  DECIMAL(12,0) NOT NULL DEFAULT 0,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_chi_tiet_hoa_don),
+    INDEX idx_chi_tiet_hoa_don_hoa_don (ma_hoa_don),
+    CONSTRAINT fk_chi_tiet_hoa_don_hoa_don
+        FOREIGN KEY (ma_hoa_don) REFERENCES hoa_don(ma_hoa_don) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- 20. notifications — Thông báo hệ thống
+-- 20. giao_dich_thanh_toan - Lich su thu tien hoan tien
 -- ============================================================
-CREATE TABLE IF NOT EXISTS notifications (
-    id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    user_id     INT UNSIGNED NOT NULL,
-    title       VARCHAR(200) NOT NULL,
-    message     TEXT         NOT NULL,
-    type        ENUM('appointment','prescription','invoice','system','reminder')
-                NOT NULL DEFAULT 'system',
-    is_read     TINYINT(1)   NOT NULL DEFAULT 0,
-    action_url  VARCHAR(500) NULL COMMENT 'Link đến trang liên quan',
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    INDEX idx_notif_user_unread (user_id, is_read),
-    INDEX idx_notif_created     (created_at),
-    CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS giao_dich_thanh_toan (
+    ma_giao_dich                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_hoa_don                  INT UNSIGNED NOT NULL,
+    loai_giao_dich              ENUM('thu_tien','hoan_tien') NOT NULL DEFAULT 'thu_tien',
+    phuong_thuc                 ENUM('tien_mat','the','chuyen_khoan','ho_tro_noi_bo','khac') NOT NULL,
+    so_tien                     DECIMAL(12,0) NOT NULL DEFAULT 0,
+    ma_tham_chieu_giao_dich     VARCHAR(100) NULL,
+    trang_thai                  ENUM('cho_xu_ly','thanh_cong','that_bai','da_huy') NOT NULL DEFAULT 'thanh_cong',
+    tao_boi                     INT UNSIGNED NOT NULL,
+    duyet_boi                   INT UNSIGNED NULL,
+    thanh_toan_luc              DATETIME NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_giao_dich),
+    INDEX idx_giao_dich_hoa_don (ma_hoa_don),
+    INDEX idx_giao_dich_thanh_toan_luc (thanh_toan_luc),
+    CONSTRAINT fk_giao_dich_hoa_don
+        FOREIGN KEY (ma_hoa_don) REFERENCES hoa_don(ma_hoa_don) ON DELETE CASCADE,
+    CONSTRAINT fk_giao_dich_tao_boi
+        FOREIGN KEY (tao_boi) REFERENCES tai_khoan(ma_tai_khoan),
+    CONSTRAINT fk_giao_dich_duyet_boi
+        FOREIGN KEY (duyet_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- SEED DATA — Dữ liệu mặc định
+-- 21. nhat_ky_kho - Lich su nhap xuat dieu chinh kho
+-- ============================================================
+CREATE TABLE IF NOT EXISTS nhat_ky_kho (
+    ma_nhat_ky_kho              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_thuoc                    INT UNSIGNED NOT NULL,
+    ma_lo_thuoc                 INT UNSIGNED NULL,
+    ma_tai_khoan                INT UNSIGNED NOT NULL,
+    hanh_dong                   ENUM('nhap','xuat','dieu_chinh','het_han','tra_hang_nhap') NOT NULL,
+    so_luong_thay_doi           INT NOT NULL COMMENT 'Duong la nhap, am la xuat',
+    so_luong_truoc              INT NOT NULL,
+    so_luong_sau                INT NOT NULL,
+    ma_tham_chieu               INT UNSIGNED NULL,
+    loai_tham_chieu             VARCHAR(50) NULL,
+    ghi_chu                     TEXT NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_nhat_ky_kho),
+    CONSTRAINT fk_nhat_ky_kho_thuoc
+        FOREIGN KEY (ma_thuoc) REFERENCES thuoc(ma_thuoc),
+    CONSTRAINT fk_nhat_ky_kho_lo_thuoc
+        FOREIGN KEY (ma_lo_thuoc) REFERENCES lo_thuoc(ma_lo_thuoc),
+    CONSTRAINT fk_nhat_ky_kho_tai_khoan
+        FOREIGN KEY (ma_tai_khoan) REFERENCES tai_khoan(ma_tai_khoan)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 22. thong_bao - Thong bao he thong
+-- ============================================================
+CREATE TABLE IF NOT EXISTS thong_bao (
+    ma_thong_bao                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_tai_khoan                INT UNSIGNED NOT NULL,
+    tieu_de                     VARCHAR(200) NOT NULL,
+    noi_dung                    TEXT NOT NULL,
+    loai_thong_bao              ENUM('lich_hen','don_thuoc','hoa_don','he_thong','nhac_hen')
+                                NOT NULL DEFAULT 'he_thong',
+    da_doc                      TINYINT(1) NOT NULL DEFAULT 0,
+    duong_dan_hanh_dong         VARCHAR(500) NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_thong_bao),
+    INDEX idx_thong_bao_tai_khoan (ma_tai_khoan, da_doc),
+    INDEX idx_thong_bao_tao_luc (tao_luc),
+    CONSTRAINT fk_thong_bao_tai_khoan
+        FOREIGN KEY (ma_tai_khoan) REFERENCES tai_khoan(ma_tai_khoan) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- DU LIEU MAU
 -- ============================================================
 
--- Tài khoản admin mặc định (password: Admin@123 — bcrypt hash)
-INSERT IGNORE INTO users (email, password, role, full_name, phone, is_active, email_verified_at)
-VALUES (
+INSERT IGNORE INTO tai_khoan (
+    ma_tai_khoan, email, mat_khau, vai_tro, ho_ten, so_dien_thoai,
+    dang_hoat_dong, email_xac_thuc_luc, tao_luc
+) VALUES (
+    1,
     'admin@qlpk.vn',
-    '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW',  -- Admin@123
-    'admin',
-    'Quản Trị Viên',
+    '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW',
+    'quan_tri',
+    'Quan tri vien',
     '0900000000',
     1,
+    NOW(),
     NOW()
 );
 
--- Ngày lễ mặc định năm 2026
-INSERT IGNORE INTO clinic_holidays (holiday_date, name) VALUES
-    ('2026-01-01', 'Tết Dương lịch'),
-    ('2026-02-17', 'Tết Nguyên Đán (28 tháng Chạp)'),
-    ('2026-02-18', 'Tết Nguyên Đán (29 tháng Chạp)'),
-    ('2026-02-19', 'Tết Nguyên Đán (Mùng 1)'),
-    ('2026-02-20', 'Tết Nguyên Đán (Mùng 2)'),
-    ('2026-02-21', 'Tết Nguyên Đán (Mùng 3)'),
-    ('2026-02-22', 'Tết Nguyên Đán (Mùng 4)'),
-    ('2026-02-23', 'Tết Nguyên Đán (Mùng 5)'),
-    ('2026-04-07', 'Giỗ Tổ Hùng Vương'),
-    ('2026-04-30', 'Ngày Giải phóng miền Nam'),
-    ('2026-05-01', 'Ngày Quốc tế Lao động'),
-    ('2026-09-02', 'Ngày Quốc khánh');
+INSERT IGNORE INTO ngay_nghi_phong_kham (ngay_nghi, ten_ngay_nghi) VALUES
+    ('2026-01-01', 'Tet Duong lich'),
+    ('2026-02-19', 'Tet Nguyen Dan mung 1'),
+    ('2026-02-20', 'Tet Nguyen Dan mung 2'),
+    ('2026-02-21', 'Tet Nguyen Dan mung 3'),
+    ('2026-04-30', 'Ngay Giai phong mien Nam'),
+    ('2026-05-01', 'Ngay Quoc te Lao dong'),
+    ('2026-09-02', 'Ngay Quoc khanh');
 
--- Dịch vụ mẫu phòng khám da liễu
-INSERT IGNORE INTO services (name, category, price, duration, description) VALUES
-    ('Khám da liễu tổng quát', 'Khám tổng quát', 200000, 30, 'Khám và tư vấn các vấn đề về da liễu'),
-    ('Điều trị mụn trứng cá', 'Điều trị mụn', 350000, 45, 'Điều trị mụn chuyên sâu, chiết xuất nhân mụn'),
-    ('Laser trị nám, tàn nhang', 'Laser thẩm mỹ', 800000, 60, 'Laser Q-Switch trị nám, đốm nâu, tàn nhang'),
-    ('Chăm sóc da cơ bản', 'Chăm sóc da', 250000, 60, 'Làm sạch sâu, dưỡng ẩm, bảo vệ da'),
-    ('Điều trị viêm da cơ địa', 'Điều trị bệnh da', 300000, 30, 'Theo dõi và điều trị viêm da cơ địa, chàm'),
-    ('Peel da hóa học', 'Thẩm mỹ da', 500000, 45, 'Chemical peel làm đều màu, trẻ hóa da'),
-    ('Tiêm filler, botox', 'Thẩm mỹ tiêm', 1500000, 30, 'Tiêm filler và botox thẩm mỹ'),
-    ('Xét nghiệm da liễu', 'Xét nghiệm', 150000, 20, 'Lấy mẫu và xét nghiệm các bệnh da liễu');
+INSERT IGNORE INTO dich_vu (ten_dich_vu, nhom_dich_vu, gia_dich_vu, thoi_luong_phut, mo_ta) VALUES
+    ('Kham da lieu tong quat', 'Kham tong quat', 200000, 30, 'Kham va tu van cac van de da lieu'),
+    ('Dieu tri mun trung ca', 'Dieu tri mun', 350000, 45, 'Dieu tri mun chuyen sau'),
+    ('Laser tri nam tan nhang', 'Laser tham my', 800000, 60, 'Dieu tri nam va tan nhang bang laser'),
+    ('Cham soc da co ban', 'Cham soc da', 250000, 60, 'Lam sach sau va duong am da'),
+    ('Dieu tri viem da co dia', 'Dieu tri benh da', 300000, 30, 'Theo doi va dieu tri viem da co dia');
 
-SELECT 'Schema QLPK đã khởi tạo thành công!' AS message;
+INSERT IGNORE INTO nha_cung_cap (
+    ten_nha_cung_cap, nguoi_lien_he, so_dien_thoai, email, dia_chi
+) VALUES (
+    'Cong ty duoc pham mau',
+    'Nguyen Van A',
+    '0911222333',
+    'nhacungcap@example.com',
+    'TP.HCM'
+);
+
+

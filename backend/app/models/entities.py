@@ -456,3 +456,34 @@ class Notification(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     action_url: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AppointmentProposal(Base):
+    __tablename__ = "appointment_proposals"
+    __table_args__ = (UniqueConstraint("appointment_id", name="uq_appointment_proposal"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id", ondelete="CASCADE"), unique=True)
+    proposed_date: Mapped[str] = mapped_column(Date)
+    proposed_time: Mapped[str] = mapped_column(Time)
+    note: Mapped[str] = mapped_column(Text)
+    discount_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    discount_note: Mapped[str | None] = mapped_column(String(255))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Supplier(Base):
+    __tablename__ = "suppliers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    contact_name: Mapped[str | None] = mapped_column(String(150))
+    phone: Mapped[str | None] = mapped_column(String(15))
+    email: Mapped[str | None] = mapped_column(String(150))
+    address: Mapped[str | None] = mapped_column(Text)
+    tax_code: Mapped[str | None] = mapped_column(String(50))
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

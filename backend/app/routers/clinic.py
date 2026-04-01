@@ -3,7 +3,7 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from reportlab.pdfgen import canvas
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -11,6 +11,7 @@ from app.core.dependencies import get_current_user, require_role
 from app.core.security import get_password_hash
 from app.models.entities import (
     Appointment,
+    AppointmentProposal,
     AppointmentService,
     AppointmentStatus,
     BookingSource,
@@ -40,17 +41,20 @@ from app.models.entities import (
     PrescriptionStatus,
     RoleEnum,
     Service,
+    Supplier,
     TransactionStatus,
     TransactionType,
     User,
     VisitType,
 )
 from app.schemas.api import (
+    AdminAccountCreate,
     AppointmentCreate,
     AppointmentServicePayload,
     AppointmentView,
     ApproveCreditPayload,
     DoctorCreate,
+    DoctorBusySlotPayload,
     DoctorLeavePayload,
     DoctorSchedulePayload,
     FollowUpPayload,
@@ -68,7 +72,9 @@ from app.schemas.api import (
     QuickPatientCreate,
     RefundPayload,
     ReschedulePayload,
+    RescheduleProposalPayload,
     ServiceCreate,
+    SupplierCreate,
     WalkInCreate,
 )
 from app.seed import next_patient_code
@@ -191,6 +197,7 @@ def serialize_appointment(db: Session, appointment: Appointment) -> dict:
     doctor = get_doctor_or_404(db, appointment.doctor_id)
     doctor_user = db.query(User).filter(User.id == doctor.user_id).first()
     patient_user = db.query(User).filter(User.id == patient.user_id).first() if patient.user_id else None
+    proposal = db.query(AppointmentProposal).filter(AppointmentProposal.appointment_id == appointment.id).first()
     return {
         "id": appointment.id,
         "patient_id": appointment.patient_id,
@@ -206,6 +213,17 @@ def serialize_appointment(db: Session, appointment: Appointment) -> dict:
         "queue_number": appointment.queue_number,
         "chief_complaint": appointment.chief_complaint,
         "notes": appointment.notes,
+        "proposal": (
+            {
+                "proposed_date": proposal.proposed_date,
+                "proposed_time": proposal.proposed_time,
+                "note": proposal.note,
+                "discount_percent": float(proposal.discount_percent),
+                "discount_note": proposal.discount_note,
+            }
+            if proposal
+            else None
+        ),
         "created_at": appointment.created_at,
     }
 
@@ -220,11 +238,36 @@ def map_gender(value: str | None):
     return GenderEnum(value) if value in GenderEnum._value2member_map_ else None
 
 
-def get_available_slots_logic(db: Session, doctor_id: int, selected_date: date) -> list[str]:
+def ensure_doctor_busy_slots_table(db: Session) -> None:
+    try:
+        db.execute(
+            text(
+                """
+            CREATE TABLE IF NOT EXISTS doctor_busy_slots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER NOT NULL,
+                busy_date DATE NOT NULL,
+                start_time TIME NOT NULL,
+                end_time TIME NOT NULL,
+                reason TEXT,
+                created_by INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+            )
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+
+
+def get_available_slots_logic(db: Session, doctor_id: int, selected_date: date) -> list[dict]:
     holiday = db.query(ClinicHoliday).filter(ClinicHoliday.holiday_date == selected_date, ClinicHoliday.is_active.is_(True)).first()
     leave = db.query(DoctorLeave).filter(DoctorLeave.doctor_id == doctor_id, DoctorLeave.leave_date == selected_date).first()
     if holiday or leave:
         return []
+
+    ensure_doctor_busy_slots_table(db)
 
     weekday = (selected_date.weekday() + 1) % 7
     schedules = (
@@ -246,14 +289,43 @@ def get_available_slots_logic(db: Session, doctor_id: int, selected_date: date) 
         key = item.appointment_time.strftime("%H:%M")
         counts[key] = counts.get(key, 0) + 1
 
-    slots: list[str] = []
+    busy_rows = db.execute(
+        text("SELECT start_time, end_time, reason FROM doctor_busy_slots WHERE doctor_id = :doctor_id AND busy_date = :busy_date"),
+        {"doctor_id": doctor_id, "busy_date": selected_date.isoformat()},
+    ).fetchall()
+
+    now_dt = datetime.now()
+    slots: list[dict] = []
     for schedule in schedules:
         current = datetime.combine(selected_date, schedule.start_time)
         end_dt = datetime.combine(selected_date, schedule.end_time)
         while current < end_dt:
             key = current.strftime("%H:%M")
-            if counts.get(key, 0) < schedule.max_patients:
-                slots.append(key)
+            slot_end = current + timedelta(minutes=schedule.slot_duration)
+            if selected_date == now_dt.date() and slot_end <= now_dt:
+                current += timedelta(minutes=schedule.slot_duration)
+                continue
+            status_name = "available"
+            label = "Còn trống"
+            for start_time, end_time, _reason in busy_rows:
+                start_key = str(start_time)[:5]
+                end_key = str(end_time)[:5]
+                if start_key <= key < end_key:
+                    status_name = "busy"
+                    label = "Bác sĩ bận"
+                    break
+            if status_name == "available" and counts.get(key, 0) >= schedule.max_patients:
+                status_name = "booked"
+                label = "Đã đặt"
+            slots.append(
+                {
+                    "time": key,
+                    "end_time": slot_end.strftime("%H:%M"),
+                    "status": status_name,
+                    "label": label,
+                    "available": status_name == "available",
+                }
+            )
             current += timedelta(minutes=schedule.slot_duration)
     return slots
 
@@ -408,7 +480,7 @@ def prepare_prescription_logic(db: Session, prescription: Prescription, user_id:
 def quick_create_patient(
     payload: QuickPatientCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "receptionist"])),
+    current_user: User = Depends(require_role(["admin"])),
 ):
     user = User(
         email=f"walkin.{payload.phone}@qlpk.vn",
@@ -439,7 +511,7 @@ def link_patient_user(
     patient_id: int,
     payload: LinkUserPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "receptionist"])),
+    current_user: User = Depends(require_role(["admin"])),
 ):
     patient = get_patient_or_404(db, patient_id)
     if patient.user_id:
@@ -462,7 +534,7 @@ def link_patient_user(
 
 
 @router.get("/api/v1/patients")
-def list_patients(db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "receptionist"]))):
+def list_patients(db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "doctor"]))):
     return [serialize_patient(db, item) for item in db.query(Patient).order_by(Patient.id.desc()).all()]
 
 
@@ -574,6 +646,7 @@ def get_doctor_schedule(doctor_id: int, db: Session = Depends(get_db)):
     ]
 
 
+@router.post("/api/v1/admin/doctors/{doctor_id}/schedule")
 @router.post("/api/v1/doctors/{doctor_id}/schedule")
 def create_doctor_schedule(
     doctor_id: int,
@@ -588,12 +661,13 @@ def create_doctor_schedule(
     return {"message": "Lịch làm việc đã được cập nhật", "id": schedule.id}
 
 
+@router.post("/api/v1/admin/doctors/{doctor_id}/leave")
 @router.post("/api/v1/doctors/{doctor_id}/leave")
 def create_doctor_leave(
     doctor_id: int,
     payload: DoctorLeavePayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "receptionist"])),
+    current_user: User = Depends(require_role(["admin"])),
 ):
     get_doctor_or_404(db, doctor_id)
     leave = DoctorLeave(doctor_id=doctor_id, leave_date=payload.leave_date, reason=payload.reason, created_by=current_user.id)
@@ -602,12 +676,13 @@ def create_doctor_leave(
     return {"message": "Đã ghi nhận ngày nghỉ", "id": leave.id}
 
 
+@router.delete("/api/v1/admin/doctors/{doctor_id}/leave/{leave_date}")
 @router.delete("/api/v1/doctors/{doctor_id}/leave/{leave_date}")
 def delete_doctor_leave(
     doctor_id: int,
     leave_date: date,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "receptionist"])),
+    current_user: User = Depends(require_role(["admin"])),
 ):
     leave = db.query(DoctorLeave).filter(DoctorLeave.doctor_id == doctor_id, DoctorLeave.leave_date == leave_date).first()
     if not leave:
@@ -672,7 +747,17 @@ def list_services(db: Session = Depends(get_db)):
 
 @router.get("/api/v1/appointments/available-slots")
 def get_available_slots(doctor_id: int = Query(...), date_value: date = Query(..., alias="date"), db: Session = Depends(get_db)):
-    return {"doctor_id": doctor_id, "date": date_value, "slots": get_available_slots_logic(db, doctor_id, date_value)}
+    slots = get_available_slots_logic(db, doctor_id, date_value)
+    return {
+        "doctor_id": doctor_id,
+        "date": date_value,
+        "slots": slots,
+        "summary": {
+            "available": len([item for item in slots if item["status"] == "available"]),
+            "booked": len([item for item in slots if item["status"] == "booked"]),
+            "busy": len([item for item in slots if item["status"] == "busy"]),
+        },
+    }
 
 
 def build_appointment(
@@ -686,7 +771,8 @@ def build_appointment(
     get_patient_or_404(db, patient_id)
     doctor = get_doctor_or_404(db, payload.doctor_id)
     slots = get_available_slots_logic(db, doctor.id, payload.appointment_date)
-    if payload.appointment_time.strftime("%H:%M") not in slots:
+    available_slot_keys = [item["time"] for item in slots if item["available"]]
+    if payload.appointment_time.strftime("%H:%M") not in available_slot_keys:
         raise HTTPException(status_code=400, detail="Selected slot is not available")
 
     overlapping = (
@@ -766,7 +852,7 @@ def create_appointment(payload: AppointmentCreate, db: Session = Depends(get_db)
 
 
 @router.post("/api/v1/appointments/walk-in", response_model=AppointmentView)
-def create_walk_in(payload: WalkInCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "receptionist"]))):
+def create_walk_in(payload: WalkInCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
     patient_id = payload.patient_id
     if not patient_id:
         if not payload.patient_name or not payload.patient_phone:
@@ -814,13 +900,14 @@ def change_appointment_status(db: Session, appointment_id: int, status_value: Ap
     return serialize_appointment(db, appointment)
 
 
+@router.patch("/api/v1/appointments/{appointment_id}/approve")
 @router.patch("/api/v1/appointments/{appointment_id}/confirm")
-def confirm_appointment(appointment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "receptionist"]))):
+def confirm_appointment(appointment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["doctor", "admin"]))):
     return change_appointment_status(db, appointment_id, AppointmentStatus.confirmed, {"confirmed_at": utcnow()})
 
 
 @router.patch("/api/v1/appointments/{appointment_id}/check-in")
-def check_in_appointment(appointment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "receptionist"]))):
+def check_in_appointment(appointment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["doctor", "admin"]))):
     appointment = get_appointment_or_404(db, appointment_id)
     queue_no = (db.query(func.coalesce(func.max(Appointment.queue_number), 0)).filter(Appointment.appointment_date == appointment.appointment_date).scalar() or 0) + 1
     return change_appointment_status(db, appointment_id, AppointmentStatus.checked_in, {"checked_in_at": utcnow(), "queue_number": queue_no})
@@ -868,7 +955,7 @@ def reschedule_appointment(
 
 
 @router.patch("/api/v1/appointments/{appointment_id}/no-show")
-def mark_no_show(appointment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "receptionist"]))):
+def mark_no_show(appointment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "doctor"]))):
     appointment = get_appointment_or_404(db, appointment_id)
     if appointment.status != AppointmentStatus.confirmed:
         raise HTTPException(status_code=400, detail="Only confirmed appointments can be marked no-show")
@@ -883,7 +970,7 @@ def create_follow_up_appointment(
     appointment_id: int,
     payload: FollowUpPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["doctor", "admin", "receptionist"])),
+    current_user: User = Depends(require_role(["doctor", "admin"])),
 ):
     source = get_appointment_or_404(db, appointment_id)
     new_payload = AppointmentCreate(
@@ -919,7 +1006,7 @@ def add_appointment_service(
     appointment_id: int,
     payload: AppointmentServicePayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["doctor", "receptionist", "admin"])),
+    current_user: User = Depends(require_role(["doctor", "admin"])),
 ):
     ensure_invoice_editable(db, appointment_id)
     service = get_service_or_404(db, payload.service_id)
@@ -941,7 +1028,7 @@ def delete_appointment_service(
     appointment_id: int,
     service_row_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["doctor", "receptionist", "admin"])),
+    current_user: User = Depends(require_role(["doctor", "admin"])),
 ):
     ensure_invoice_editable(db, appointment_id)
     item = db.query(AppointmentService).filter(AppointmentService.id == service_row_id, AppointmentService.appointment_id == appointment_id).first()
@@ -1250,7 +1337,7 @@ def generate_invoice(
     appointment_id: int,
     payload: InvoiceGeneratePayload | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["cashier", "admin"])),
+    current_user: User = Depends(require_role(["pharmacist", "admin"])),
 ):
     payload = payload or InvoiceGeneratePayload()
     appointment = get_appointment_or_404(db, appointment_id)
@@ -1339,7 +1426,7 @@ def pay_invoice(
     invoice_id: int,
     payload: InvoicePayPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["cashier", "admin"])),
+    current_user: User = Depends(require_role(["pharmacist", "admin"])),
 ):
     invoice = get_invoice_or_404(db, invoice_id)
     method = PaymentMethod(payload.payment_method)
@@ -1366,7 +1453,7 @@ def pay_invoice(
 
 
 @router.patch("/api/v1/invoices/{invoice_id}/confirm-transfer")
-def confirm_transfer(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["cashier", "admin"]))):
+def confirm_transfer(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["pharmacist", "admin"]))):
     invoice = get_invoice_or_404(db, invoice_id)
     tx = (
         db.query(PaymentTransaction)
@@ -1388,7 +1475,7 @@ def approve_credit(
     invoice_id: int,
     payload: ApproveCreditPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "cashier"])),
+    current_user: User = Depends(require_role(["admin", "pharmacist"])),
 ):
     invoice = get_invoice_or_404(db, invoice_id)
     invoice.locked_at = invoice.locked_at or utcnow()
@@ -1406,7 +1493,7 @@ def refund_invoice(
     invoice_id: int,
     payload: RefundPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["cashier", "admin"])),
+    current_user: User = Depends(require_role(["pharmacist", "admin"])),
 ):
     invoice = get_invoice_or_404(db, invoice_id)
     db.add(
@@ -1451,6 +1538,204 @@ def invoice_pdf(invoice_id: int, db: Session = Depends(get_db), current_user: Us
     pdf.save()
     buffer.seek(0)
     return Response(buffer.getvalue(), media_type="application/pdf", headers={"Content-Disposition": f"inline; filename={invoice.invoice_number}.pdf"})
+
+
+@router.post("/api/v1/admin/doctors/{doctor_id}/busy-slots")
+def create_busy_slot(
+    doctor_id: int,
+    payload: DoctorBusySlotPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    get_doctor_or_404(db, doctor_id)
+    ensure_doctor_busy_slots_table(db)
+    db.execute(
+        text(
+            """
+        INSERT INTO doctor_busy_slots (doctor_id, busy_date, start_time, end_time, reason, created_by)
+        VALUES (:doctor_id, :busy_date, :start_time, :end_time, :reason, :created_by)
+        """
+        ),
+        {
+            "doctor_id": doctor_id,
+            "busy_date": payload.busy_date.isoformat(),
+            "start_time": payload.start_time.strftime("%H:%M:%S"),
+            "end_time": payload.end_time.strftime("%H:%M:%S"),
+            "reason": payload.reason,
+            "created_by": current_user.id,
+        },
+    )
+    db.commit()
+    return {"message": "Đã tạo khoảng bận cho bác sĩ"}
+
+
+@router.patch("/api/v1/appointments/{appointment_id}/propose-reschedule")
+def propose_reschedule(
+    appointment_id: int,
+    payload: RescheduleProposalPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["doctor", "admin"])),
+):
+    appointment = get_appointment_or_404(db, appointment_id)
+    proposal = db.query(AppointmentProposal).filter(AppointmentProposal.appointment_id == appointment.id).first()
+    if proposal:
+        proposal.proposed_date = payload.proposed_date
+        proposal.proposed_time = payload.proposed_time
+        proposal.note = payload.note
+        proposal.discount_percent = payload.discount_percent
+        proposal.discount_note = payload.discount_note
+        proposal.created_by = current_user.id
+    else:
+        db.add(
+            AppointmentProposal(
+                appointment_id=appointment.id,
+                proposed_date=payload.proposed_date,
+                proposed_time=payload.proposed_time,
+                note=payload.note,
+                discount_percent=payload.discount_percent,
+                discount_note=payload.discount_note,
+                created_by=current_user.id,
+            )
+        )
+    appointment.status = AppointmentStatus.pending
+    appointment.notes = payload.note
+    patient = get_patient_or_404(db, appointment.patient_id)
+    if patient.user_id:
+        create_notification(
+            db,
+            patient.user_id,
+            "Bác sĩ đề nghị đổi lịch",
+            payload.note,
+            NotificationType.appointment,
+        )
+    db.commit()
+    return serialize_appointment(db, appointment)
+
+
+@router.get("/api/v1/admin/accounts")
+def list_accounts(db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [serialize_user(user) for user in users]
+
+
+@router.post("/api/v1/admin/accounts/{role_name}")
+def create_account(
+    role_name: str,
+    payload: AdminAccountCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    role_map = {"doctor": RoleEnum.doctor, "pharmacist": RoleEnum.pharmacist, "patient": RoleEnum.patient}
+    if role_name not in role_map:
+        raise HTTPException(status_code=400, detail="Role is not supported")
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(status_code=400, detail="Email already exists")
+    user = User(
+        email=payload.email,
+        password=get_password_hash(payload.password),
+        role=role_map[role_name],
+        full_name=payload.full_name,
+        phone=payload.phone,
+        is_active=True,
+        email_verified_at=utcnow(),
+    )
+    db.add(user)
+    db.flush()
+    if role_name == "doctor":
+        if not payload.specialty or not payload.license_number:
+            raise HTTPException(status_code=400, detail="specialty and license_number are required")
+        db.add(
+            Doctor(
+                user_id=user.id,
+                specialty=payload.specialty,
+                license_number=payload.license_number,
+                degree=payload.degree,
+                experience_years=payload.experience_years,
+                consultation_fee=payload.consultation_fee,
+                bio=payload.bio,
+            )
+        )
+    if role_name == "patient":
+        db.add(Patient(user_id=user.id, patient_code=next_patient_code(db), created_source=PatientSource.admin))
+    db.commit()
+    return {"message": "Đã tạo tài khoản", "user": serialize_user(user)}
+
+
+@router.patch("/api/v1/admin/accounts/{user_id}/reset-password")
+def admin_reset_password(user_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    new_password = payload.get("new_password")
+    if not new_password:
+        raise HTTPException(status_code=400, detail="new_password is required")
+    user.password = get_password_hash(new_password)
+    db.commit()
+    return {"message": "Đã đặt lại mật khẩu"}
+
+
+@router.patch("/api/v1/admin/accounts/{user_id}/lock")
+def lock_account(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = False
+    db.commit()
+    return {"message": "Đã khóa tài khoản"}
+
+
+@router.patch("/api/v1/admin/accounts/{user_id}/unlock")
+def unlock_account(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = True
+    user.email_verified_at = user.email_verified_at or utcnow()
+    db.commit()
+    return {"message": "Đã mở khóa tài khoản"}
+
+
+@router.get("/api/v1/suppliers")
+def list_suppliers(db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "pharmacist"]))):
+    suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
+    return [
+        {
+            "id": item.id,
+            "name": item.name,
+            "contact_name": item.contact_name,
+            "phone": item.phone,
+            "email": item.email,
+            "address": item.address,
+            "tax_code": item.tax_code,
+            "notes": item.notes,
+            "is_active": item.is_active,
+        }
+        for item in suppliers
+    ]
+
+
+@router.post("/api/v1/suppliers")
+def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin", "pharmacist"]))):
+    supplier = Supplier(**payload.model_dump())
+    db.add(supplier)
+    db.commit()
+    return {"message": "Đã tạo nhà cung cấp", "id": supplier.id}
+
+
+@router.put("/api/v1/suppliers/{supplier_id}")
+def update_supplier(
+    supplier_id: int,
+    payload: SupplierCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin", "pharmacist"])),
+):
+    supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    for key, value in payload.model_dump().items():
+        setattr(supplier, key, value)
+    db.commit()
+    return {"message": "Đã cập nhật nhà cung cấp"}
 
 
 @router.get("/api/v1/notifications", response_model=list[NotificationView])

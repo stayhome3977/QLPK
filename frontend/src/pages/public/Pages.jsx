@@ -1,269 +1,334 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api/http";
 import { useAuth } from "../../auth";
-import { Field, Panel, Alert, EmptyState } from "../../components/shared/UI";
-import { fmtDate, currency, STATUS_LABELS, statusClass } from "../../utils/helpers";
+import { Alert, Field } from "../../components/shared/UI";
+import { currency, ROLE_LABELS, SLOT_STATUS } from "../../utils/helpers";
 
-// ── Trang chủ public ────────────────────────────────────
-export function HomePage() {
-  const [doctors, setDoctors] = useState([]);
-  const [services, setServices] = useState([]);
-  const [loaded, setLoaded] = useState(false);
-
-  if (!loaded) {
-    setLoaded(true);
-    Promise.all([api.get("/api/v1/doctors"), api.get("/api/v1/services")])
-      .then(([dr, sv]) => { setDoctors(dr.data.slice(0, 3)); setServices(sv.data.slice(0, 4)); })
-      .catch(() => {});
-  }
-
-  return (
-    <main className="page">
-      <section className="hero">
-        <div className="panel headline">
-          <span className="chip chip-blue">Hệ thống quản lý phòng khám · 2026</span>
-          <h1>Quản lý phòng khám da liễu từ đặt lịch đến cấp thuốc</h1>
-          <p className="muted">
-            Hệ thống bao gồm 6 vai trò: Bệnh nhân, Bác sĩ, Lễ tân, Thu ngân, Dược sĩ và Admin. 
-            Kết nối trực tiếp MySQL qua FastAPI.
-          </p>
-          <div className="cta-row">
-            <Link className="btn btn-primary" to="/login">Đăng nhập hệ thống</Link>
-            <Link className="btn btn-secondary" to="/dich-vu">Xem dịch vụ</Link>
-          </div>
-        </div>
-        <div className="panel">
-          <h3>Tài khoản demo</h3>
-          {[
-            ["🔐 Admin",      "admin@qlpk.vn",       "Admin@123"],
-            ["👨‍⚕️ Bác sĩ",   "doctor@qlpk.vn",      "Doctor@123"],
-            ["🧑‍💼 Lễ tân",   "reception@qlpk.vn",   "Demo@123"],
-            ["💰 Thu ngân",   "cashier@qlpk.vn",     "Demo@123"],
-            ["💊 Dược sĩ",    "pharmacist@qlpk.vn",  "Demo@123"],
-            ["🧑‍🤒 Bệnh nhân","patient@qlpk.vn",     "Patient@123"],
-          ].map(([role, email, pass]) => (
-            <div key={email} style={{ display:"flex", justifyContent:"space-between", padding:"0.5rem 0", borderBottom:"1px solid var(--border)" }}>
-              <span>{role}</span>
-              <span className="muted" style={{ fontSize:"0.82rem" }}>{email} / {pass}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="content-grid">
-        <div className="sidebar">
-          <div className="panel">
-            <div className="stats-grid" style={{ gridTemplateColumns:"1fr 1fr" }}>
-              <div className="stat-card"><div className="label">Vai trò</div><div className="value">6</div></div>
-              <div className="stat-card"><div className="label">Module</div><div className="value">8</div></div>
-              <div className="stat-card"><div className="label">Bảng DB</div><div className="value">16</div></div>
-              <div className="stat-card"><div className="label">API</div><div className="value small">60+</div></div>
-            </div>
-          </div>
-        </div>
-        <div className="main-content">
-          <div className="panel">
-            <h3>Bác sĩ nổi bật</h3>
-            <div className="list-grid">
-              {doctors.map((d) => (
-                <div className="card" key={d.id}>
-                  <h4>{d.user?.full_name}</h4>
-                  <span className="chip chip-blue">{d.specialty}</span>
-                  <p className="muted">{d.bio || "Chuyên khoa da liễu"}</p>
-                  <span className="muted" style={{ fontSize:"0.8rem" }}>Phí khám: {currency(d.consultation_fee)}</span>
-                </div>
-              ))}
-              {doctors.length === 0 && <p className="muted">Đang tải...</p>}
-            </div>
-          </div>
-          <div className="panel">
-            <h3>Dịch vụ phòng khám</h3>
-            <div className="list-grid">
-              {services.map((s) => (
-                <div className="card" key={s.id}>
-                  <h4>{s.name}</h4>
-                  <span className="chip chip-purple">{s.category}</span>
-                  <strong style={{ color:"var(--teal-1)" }}>{currency(s.price)}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-  );
+function useLoad(path, initialValue = []) {
+  const [data, setData] = useState(initialValue);
+  useEffect(() => {
+    api.get(path).then((response) => setData(response.data)).catch(() => setData(initialValue));
+  }, [path]);
+  return data;
 }
 
-// ── Đăng nhập ────────────────────────────────────────────
+
+
 export function LoginPage() {
-  const navigate = useNavigate();
-  const { login, isAuthenticated } = useAuth();
-  const [form, setForm] = useState({ email: "admin@qlpk.vn", password: "Admin@123" });
+  const [mode, setMode] = useState("login");
+  const [loginForm, setLoginForm] = useState({ email: "patient@qlpk.vn", password: "Patient@123" });
+  const [registerForm, setRegisterForm] = useState({
+    full_name: "",
+    email: "",
+    password: "",
+    phone: "",
+  });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  if (isAuthenticated) { navigate("/app", { replace: true }); return null; }
+  const submitLogin = async (event) => {
+    event.preventDefault();
+    try {
+      setLoading(true);
+      setError("");
+      const user = await login(loginForm.email, loginForm.password);
+      navigate(location.state?.redirectTo || (user.role === "patient" ? "/patient" : `/${user.role}`), { replace: true });
+    } catch (err) {
+      setError(err.response?.data?.detail || "Đăng nhập thất bại");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const onSubmit = async (e) => {
-    e.preventDefault();
-    try { setError(""); setLoading(true); await login(form.email, form.password); navigate("/app"); }
-    catch (err) { setError(err.response?.data?.detail || "Đăng nhập thất bại. Kiểm tra lại email và mật khẩu."); }
-    finally { setLoading(false); }
+  const submitRegister = async (event) => {
+    event.preventDefault();
+    try {
+      setLoading(true);
+      setError("");
+      await api.post("/api/v1/auth/register", registerForm);
+      await login(registerForm.email, registerForm.password);
+      navigate("/patient", { replace: true });
+    } catch (err) {
+      setError(err.response?.data?.detail || "Đăng ký thất bại");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <main className="login-shell">
-      <div className="login-card">
-        <div style={{ marginBottom:"1.5rem" }}>
-          <h2>Đăng nhập</h2>
-          <p className="muted">Hệ thống Quản Lý Phòng Khám Da Liễu</p>
+    <main className="auth-page">
+      <section className="auth-visual">
+        <span className="eyebrow">Đăng nhập hệ thống</span>
+        <h1>Trang công khai cho bệnh nhân, dashboard riêng cho bác sĩ, dược sĩ và quản trị.</h1>
+        <p>Luồng mới bỏ lễ tân và thu ngân, toàn bộ thanh toán chuyển sang dược sĩ.</p>
+        <div className="demo-accounts-popup">
+          <strong>Tài khoản mẫu (Mật khẩu theo quyền):</strong>
+          <ul>
+            <li>
+              <span>Quản trị viên:</span>
+              <div style={{ textAlign: "right" }}>
+                <code>admin@qlpk.vn</code> <br/>
+                <small>MK:</small> <code>Admin@123</code>
+              </div>
+            </li>
+            <li>
+              <span>Bác sĩ:</span>
+              <div style={{ textAlign: "right" }}>
+                <code>doctor@qlpk.vn</code> <br/>
+                <small>MK:</small> <code>Doctor@123</code>
+              </div>
+            </li>
+            <li>
+              <span>Dược sĩ:</span>
+              <div style={{ textAlign: "right" }}>
+                <code>pharmacist@qlpk.vn</code> <br/>
+                <small>MK:</small> <code>Pharmacist@123</code>
+              </div>
+            </li>
+            <li>
+              <span>Bệnh nhân:</span>
+              <div style={{ textAlign: "right" }}>
+                <code>patient@qlpk.vn</code> <br/>
+                <small>MK:</small> <code>Patient@123</code>
+              </div>
+            </li>
+          </ul>
         </div>
-        <form onSubmit={onSubmit}>
-          <div className="form-grid" style={{ gridTemplateColumns:"1fr", gap:"0.85rem" }}>
+      </section>
+
+      <section className="auth-card">
+        <div className="auth-tabs">
+          <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")} type="button">
+            Đăng nhập
+          </button>
+          <button className={mode === "register" ? "active" : ""} onClick={() => setMode("register")} type="button">
+            Đăng ký
+          </button>
+        </div>
+
+        {mode === "login" ? (
+          <form onSubmit={submitLogin} className="auth-form">
             <Field label="Email">
-              <input type="email" value={form.email} onChange={(e) => setForm(p => ({ ...p, email: e.target.value }))} placeholder="email@qlpk.vn" />
+              <input value={loginForm.email} onChange={(e) => setLoginForm((p) => ({ ...p, email: e.target.value }))} />
             </Field>
             <Field label="Mật khẩu">
-              <input type="password" value={form.password} onChange={(e) => setForm(p => ({ ...p, password: e.target.value }))} placeholder="••••••••" />
+              <input type="password" value={loginForm.password} onChange={(e) => setLoginForm((p) => ({ ...p, password: e.target.value }))} />
             </Field>
-          </div>
-          {error && <Alert type="error" style={{ marginTop:"0.75rem" }}>{error}</Alert>}
-          <button className="btn btn-primary" type="submit" disabled={loading}
-            style={{ width:"100%", marginTop:"1.25rem", padding:"0.8rem" }}>
-            {loading ? "Đang đăng nhập..." : "Đăng nhập"}
-          </button>
-        </form>
-        <hr className="divider" />
-        <p className="muted" style={{ textAlign:"center", fontSize:"0.85rem" }}>
-          Chưa có tài khoản? <Link to="/dang-ky" style={{ color:"var(--teal-1)" }}>Đăng ký bệnh nhân</Link>
-        </p>
-      </div>
+            {error ? <Alert type="error">{error}</Alert> : null}
+            <button className="primary-button" disabled={loading}>
+              {loading ? "Đang xử lý..." : "Đăng nhập"}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={submitRegister} className="auth-form">
+            <Field label="Họ và tên">
+              <input value={registerForm.full_name} onChange={(e) => setRegisterForm((p) => ({ ...p, full_name: e.target.value }))} />
+            </Field>
+            <Field label="Email">
+              <input type="email" value={registerForm.email} onChange={(e) => setRegisterForm((p) => ({ ...p, email: e.target.value }))} />
+            </Field>
+            <Field label="Mật khẩu">
+              <input type="password" value={registerForm.password} onChange={(e) => setRegisterForm((p) => ({ ...p, password: e.target.value }))} />
+            </Field>
+            <Field label="Số điện thoại">
+              <input value={registerForm.phone} onChange={(e) => setRegisterForm((p) => ({ ...p, phone: e.target.value }))} />
+            </Field>
+            {error ? <Alert type="error">{error}</Alert> : null}
+            <button className="primary-button" disabled={loading}>
+              {loading ? "Đang xử lý..." : "Tạo tài khoản bệnh nhân"}
+            </button>
+          </form>
+        )}
+      </section>
     </main>
   );
 }
 
-// ── Đăng ký bệnh nhân ───────────────────────────────────
-export function RegisterPage() {
+export function DoctorsPage() {
+  const doctors = useLoad("/api/v1/doctors");
+
+  return (
+    <main className="public-page">
+      <section className="section-card">
+        <h2>Đội ngũ bác sĩ</h2>
+        <div className="tile-grid">
+          {doctors.map((doctor) => (
+            <Link key={doctor.id} to={`/booking/${doctor.id}`} className="doctor-card">
+              <div className="doctor-avatar">{doctor.user?.full_name?.slice(0, 1) || "B"}</div>
+              <div>
+                <strong>{doctor.user?.full_name}</strong>
+                <p>{doctor.specialty}</p>
+                <span>{doctor.degree || "Bác sĩ da liễu"}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export function ServicesPage() {
+  const services = useLoad("/api/v1/services");
+
+  return (
+    <main className="public-page">
+      <section className="section-card">
+        <h2>Dịch vụ da liễu</h2>
+        <div className="tile-grid">
+          {services.map((service) => (
+            <Link key={service.id} to={`/booking?service=${service.id}`} className="tile service-tile">
+              <strong>{service.name}</strong>
+              <p>{service.description}</p>
+              <span>{currency(service.price)}</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export function BookingPage() {
+  const doctors = useLoad("/api/v1/doctors");
+  const services = useLoad("/api/v1/services");
+  const { doctorId } = useParams();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const { login, isAuthenticated } = useAuth();
-  const [form, setForm] = useState({ full_name:"", email:"", password:"", phone:"", gender:"", date_of_birth:"", address:"" });
+  const [form, setForm] = useState({
+    doctor_id: doctorId || "",
+    primary_service_id: "",
+    appointment_date: "",
+    appointment_time: "",
+    chief_complaint: "",
+  });
+  const [slots, setSlots] = useState([]);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const location = useLocation();
 
-  if (isAuthenticated) { navigate("/app", { replace: true }); return null; }
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const service = query.get("service");
+    if (service) {
+      setForm((prev) => ({ ...prev, primary_service_id: service }));
+    }
+  }, [location.search]);
 
-  const onSubmit = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (doctorId) {
+      setForm((prev) => ({ ...prev, doctor_id: doctorId }));
+    }
+  }, [doctorId]);
+
+  useEffect(() => {
+    if (!form.doctor_id || !form.appointment_date) return;
+    api
+      .get("/api/v1/appointments/available-slots", { params: { doctor_id: form.doctor_id, date: form.appointment_date } })
+      .then((response) => setSlots(response.data.slots || []))
+      .catch(() => setSlots([]));
+  }, [form.doctor_id, form.appointment_date]);
+
+  const selectedDoctor = doctors.find((item) => String(item.id) === String(form.doctor_id));
+
+  const submitBooking = async (event) => {
+    event.preventDefault();
+    if (!isAuthenticated) {
+      navigate("/login", { state: { redirectTo: `/booking/${form.doctor_id}` } });
+      return;
+    }
     try {
-      setError(""); setLoading(true);
-      const payload = { ...form };
-      if (!payload.date_of_birth) delete payload.date_of_birth;
-      if (!payload.gender) delete payload.gender;
-      await api.post("/api/v1/auth/register", payload);
-      await login(form.email, form.password);
-      navigate("/app");
+      setError("");
+      await api.post("/api/v1/appointments", {
+        doctor_id: Number(form.doctor_id),
+        primary_service_id: form.primary_service_id ? Number(form.primary_service_id) : null,
+        appointment_date: form.appointment_date,
+        appointment_time: form.appointment_time,
+        chief_complaint: form.chief_complaint,
+      });
+      navigate("/patient");
     } catch (err) {
-      setError(err.response?.data?.detail || "Đăng ký thất bại.");
-    } finally { setLoading(false); }
+      setError(err.response?.data?.detail || "Không thể tạo lịch hẹn");
+    }
   };
 
-  const f = (key) => (e) => setForm(p => ({ ...p, [key]: e.target.value }));
-
   return (
-    <main className="login-shell">
-      <div className="login-card" style={{ width:"min(560px,100%)" }}>
-        <div style={{ marginBottom:"1.5rem" }}>
-          <h2>Đăng ký bệnh nhân</h2>
-          <p className="muted">Tạo tài khoản để đặt lịch khám trực tuyến</p>
+    <main className="public-page booking-page-bg">
+      <div className="booking-split-card">
+        <div className="booking-left-col">
+          <h2>Bác sĩ: {selectedDoctor?.user?.full_name || "Vui lòng chọn"}</h2>
+          <div className="doctor-details-text">
+            <p><strong>Bác sĩ:</strong> {selectedDoctor?.user?.full_name || "—"}</p>
+            <p><strong>Chuyên khoa:</strong> {selectedDoctor?.specialty || "—"}</p>
+            <p><strong>Số điện thoại:</strong> {selectedDoctor?.user?.phone || "—"}</p>
+            <p><strong>Email:</strong> {selectedDoctor?.user?.email || "—"}</p>
+          </div>
         </div>
-        <form onSubmit={onSubmit}>
-          <div className="form-grid">
-            <Field label="Họ và tên"><input required value={form.full_name} onChange={f("full_name")} placeholder="Nguyễn Văn A" /></Field>
-            <Field label="Email"><input type="email" required value={form.email} onChange={f("email")} placeholder="email@gmail.com" /></Field>
-            <Field label="Mật khẩu"><input type="password" required minLength={8} value={form.password} onChange={f("password")} placeholder="Tối thiểu 8 ký tự" /></Field>
-            <Field label="Số điện thoại"><input value={form.phone} onChange={f("phone")} placeholder="09xxxxxxxx" /></Field>
-            <Field label="Ngày sinh"><input type="date" value={form.date_of_birth} onChange={f("date_of_birth")} /></Field>
-            <Field label="Giới tính">
-              <select value={form.gender} onChange={f("gender")}>
-                <option value="">-- Chọn --</option>
-                <option value="male">Nam</option>
-                <option value="female">Nữ</option>
-                <option value="other">Khác</option>
+
+        <div className="booking-right-col">
+          <h2>Đặt khám</h2>
+          <form className="booking-form" onSubmit={submitBooking}>
+            <Field label="Bác sĩ">
+              <select value={form.doctor_id} onChange={(e) => setForm((p) => ({ ...p, doctor_id: e.target.value, appointment_time: "" }))}>
+                <option value="">Chọn bác sĩ</option>
+                {doctors.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>
+                    {doctor.user?.full_name} - {doctor.specialty}
+                  </option>
+                ))}
               </select>
             </Field>
-          </div>
-          <Field label="Địa chỉ">
-            <input value={form.address} onChange={f("address")} placeholder="Số nhà, đường, quận, thành phố" />
-          </Field>
-          {error && <Alert type="error" style={{ marginTop:"0.75rem" }}>{error}</Alert>}
-          <button className="btn btn-primary" type="submit" disabled={loading}
-            style={{ width:"100%", marginTop:"1.25rem", padding:"0.8rem" }}>
-            {loading ? "Đang tạo tài khoản..." : "Đăng ký"}
-          </button>
-        </form>
-        <hr className="divider" />
-        <p className="muted" style={{ textAlign:"center", fontSize:"0.85rem" }}>
-          Đã có tài khoản? <Link to="/login" style={{ color:"var(--teal-1)" }}>Đăng nhập</Link>
-        </p>
-      </div>
-    </main>
-  );
-}
 
-// ── Danh sách bác sĩ ────────────────────────────────────
-export function DoctorsPage() {
-  const [doctors, setDoctors] = useState([]);
-  const [loaded, setLoaded] = useState(false);
-  if (!loaded) { setLoaded(true); api.get("/api/v1/doctors").then((r) => setDoctors(r.data)).catch(() => {}); }
-  return (
-    <main className="page">
-      <div className="panel">
-        <h2 style={{ marginBottom:"1.25rem" }}>Đội ngũ bác sĩ</h2>
-        <div className="list-grid">
-          {doctors.map((d) => (
-            <div className="card" key={d.id}>
-              <div style={{ display:"flex", gap:"0.75rem", alignItems:"flex-start" }}>
-                <div style={{ width:44, height:44, borderRadius:"50%", background:"linear-gradient(135deg,var(--teal-2),var(--teal-3))", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.2rem", flexShrink:0 }}>👨‍⚕️</div>
-                <div>
-                  <h4>{d.user?.full_name}</h4>
-                  <span className="chip chip-blue" style={{ marginTop:"0.25rem" }}>{d.specialty}</span>
-                </div>
-              </div>
-              <p className="muted">{d.bio || "Chuyên khoa da liễu và thẩm mỹ da."}</p>
-              <div style={{ display:"flex", justifyContent:"space-between", paddingTop:"0.5rem", borderTop:"1px solid var(--border)" }}>
-                <span className="muted" style={{ fontSize:"0.82rem" }}>{d.degree} · {d.experience_years} năm KN</span>
-                <strong style={{ color:"var(--teal-1)", fontSize:"0.9rem" }}>{currency(d.consultation_fee)}</strong>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </main>
-  );
-}
+            <Field label="Dịch vụ chính">
+              <select value={form.primary_service_id} onChange={(e) => setForm((p) => ({ ...p, primary_service_id: e.target.value }))}>
+                <option value="">Chọn dịch vụ</option>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
 
-// ── Danh sách dịch vụ ────────────────────────────────────
-export function ServicesPage() {
-  const [services, setServices] = useState([]);
-  const [loaded, setLoaded] = useState(false);
-  if (!loaded) { setLoaded(true); api.get("/api/v1/services").then((r) => setServices(r.data)).catch(() => {}); }
-  return (
-    <main className="page">
-      <div className="panel">
-        <h2 style={{ marginBottom:"1.25rem" }}>Dịch vụ phòng khám</h2>
-        <div className="list-grid">
-          {services.map((s) => (
-            <div className="card" key={s.id}>
-              <h4>{s.name}</h4>
-              <span className="chip chip-purple">{s.category}</span>
-              <p className="muted">{s.description || "Dịch vụ chuyên khoa da liễu."}</p>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", paddingTop:"0.5rem", borderTop:"1px solid var(--border)" }}>
-                <span className="muted" style={{ fontSize:"0.82rem" }}>⏱ {s.duration} phút</span>
-                <strong style={{ color:"var(--teal-1)" }}>{currency(s.price)}</strong>
-              </div>
+            <Field label="Ngày khám:">
+              <input type="date" value={form.appointment_date} onChange={(e) => setForm((p) => ({ ...p, appointment_date: e.target.value }))} />
+            </Field>
+
+            <p className="hint-text">Chỉ hiển thị các khung giờ chưa qua thời gian hiện tại.</p>
+
+            <Field label="Giờ khám:">
+              <select value={form.appointment_time} onChange={(e) => setForm((p) => ({ ...p, appointment_time: e.target.value }))}>
+                 <option value="">Chọn giờ khám</option>
+                 {slots.map(slot => (
+                   <option key={slot.time} value={slot.time} disabled={!slot.available}>
+                     {slot.time} - {slot.end_time} ({slot.label})
+                   </option>
+                 ))}
+              </select>
+            </Field>
+
+            <Field label="Ghi chú (nếu có):">
+              <textarea
+                value={form.chief_complaint}
+                onChange={(e) => setForm((p) => ({ ...p, chief_complaint: e.target.value }))}
+                rows={4}
+              />
+            </Field>
+
+            <button className="primary-button fill-btn" disabled={!form.appointment_time}>
+              Đặt lịch
+            </button>
+
+            <div className="slot-legend custom-legend">
+              <span className="legend-item"><span className="dot green"></span>Còn trống</span>
+              <span className="legend-item"><span className="dot red"></span>Đã đặt</span>
             </div>
-          ))}
+
+            {error ? <Alert type="error">{error}</Alert> : null}
+          </form>
         </div>
       </div>
     </main>

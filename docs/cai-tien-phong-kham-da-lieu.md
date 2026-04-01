@@ -4,6 +4,8 @@
 > **Môi trường phát triển:** Visual Studio Code 2026  
 > **Mục tiêu:** Hệ thống đầy đủ nghiệp vụ, sẵn sàng triển khai thực tế
 
+> **Ghi chú triển khai:** file SQL chính thức dùng để khởi tạo CSDL là `database/migrations/001_create_all_tables.sql`. Từ bản cập nhật này, tên bảng và cột trong migration đã được Việt hóa không dấu để đồng bộ với yêu cầu tài liệu.
+
 ---
 
 ## 📋 Mục Lục
@@ -29,7 +31,7 @@
 | Hạn chế | Mô tả |
 |---|---|
 | Kiến trúc không tách biệt | PHP xử lý cả logic lẫn giao diện trong cùng file |
-| Thiếu module thanh toán | Không có hóa đơn, thu ngân |
+| Thiếu module thanh toán | Không có hóa đơn, luồng dược sĩ thu tiền tích hợp |
 | Thiếu kê đơn thuốc | Không quản lý đơn thuốc, kho dược |
 | Bảo mật yếu | Nguy cơ SQL Injection nếu không dùng Prepared Statements |
 | Không có báo cáo | Admin không xem được thống kê doanh thu |
@@ -38,9 +40,9 @@
 
 ### Những gì được thêm mới
 
-- ✅ **5 roles** thay vì 3: Bệnh nhân, Bác sĩ, Lễ tân, Thu ngân, Dược sĩ
+- ✅ **4 roles**: Bệnh nhân, Bác sĩ, Dược sĩ, Quản trị
 - ✅ **Module kê đơn thuốc** và quản lý kho dược
-- ✅ **Module thanh toán** và xuất hóa đơn
+- ✅ **Module thanh toán tại quầy thuốc** và xuất hóa đơn
 - ✅ **Dashboard thống kê** doanh thu, lịch khám, tồn kho
 - ✅ **REST API chuẩn** — dễ mở rộng thành mobile app
 - ✅ **Responsive** — tương thích mọi thiết bị
@@ -49,10 +51,10 @@
 
 ### Nguyên tắc phạm vi triển khai thực tế
 
-- **Phase 1** tập trung vào vận hành nội bộ phòng khám: đặt lịch, check-in, khám, kê đơn, thu tiền, xuất thuốc, báo cáo
+- **Phase 1** tập trung vào luồng chính: bệnh nhân tự đăng ký, chọn bác sĩ và xem lịch rảnh; bác sĩ duyệt lịch hoặc đề nghị hoãn; sau đó khám, kê đơn, thu tiền, xuất thuốc, báo cáo
 - **BHYT** trong tài liệu này chỉ nên hiểu là **hỗ trợ nhập mức hỗ trợ/giảm trừ nội bộ**, chưa mặc định là tích hợp claim BHYT với cơ quan bảo hiểm
 - **Kho thuốc** quản lý theo **lô nhập/hạn dùng** để tránh sai lệch tồn kho khi có nhiều lần nhập cùng một thuốc
-- **Thanh toán** tách thành **hóa đơn**, **dòng chi tiết**, **giao dịch thanh toán** để hỗ trợ trả nhiều lần, hoàn tiền, đối soát
+- **Thanh toán** gắn với quy trình **dược sĩ giao thuốc + in hóa đơn**, vẫn tách **hóa đơn**, **dòng chi tiết**, **giao dịch thanh toán** để hỗ trợ đối soát
 
 ---
 
@@ -271,7 +273,7 @@ CREATE TABLE users (
     id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     email       VARCHAR(150) NOT NULL UNIQUE,
     password    VARCHAR(255) NOT NULL COMMENT 'bcrypt hash',
-    role        ENUM('admin','doctor','receptionist','cashier','pharmacist','patient')
+    role        ENUM('admin','doctor','pharmacist','patient')
                 NOT NULL DEFAULT 'patient',
     full_name   VARCHAR(100) NOT NULL,
     phone       VARCHAR(15),
@@ -288,10 +290,8 @@ CREATE TABLE users (
 
 **Giải thích role:**
 - `admin` — Quản trị toàn hệ thống
-- `doctor` — Bác sĩ khám bệnh
-- `receptionist` — Lễ tân xác nhận lịch, check-in
-- `cashier` — Thu ngân lập và thu hóa đơn
-- `pharmacist` — Dược sĩ xuất thuốc, quản lý kho
+- `doctor` — Bác sĩ khám bệnh, duyệt lịch của mình, đề nghị hoãn lịch
+- `pharmacist` — Dược sĩ chuẩn bị thuốc, quản lý kho, thanh toán và in hóa đơn
 - `patient` — Bệnh nhân đặt lịch
 
 ---
@@ -368,7 +368,7 @@ CREATE TABLE doctor_leave (
     doctor_id   INT UNSIGNED NOT NULL,
     leave_date  DATE NOT NULL,
     reason      VARCHAR(200),
-    created_by  INT UNSIGNED NOT NULL COMMENT 'Admin/lễ tân ghi nhận',
+    created_by  INT UNSIGNED NOT NULL COMMENT 'Admin/bác sĩ ghi nhận',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE,
     FOREIGN KEY (created_by) REFERENCES users(id),
@@ -413,7 +413,7 @@ CREATE TABLE services (
 
 #### Bảng `appointment_services` — Dịch vụ thực hiện trong buổi khám
 
-> Phòng khám da liễu thường thực hiện **nhiều dịch vụ trong cùng một lần khám** (VD: chiết xuất nhân mụn + laser + chăm sóc cơ bản). Bảng này lưu danh sách đầy đủ các dịch vụ đã làm, được Thu ngân hoặc Bác sĩ bổ sung trong quá trình khám.
+> Phòng khám da liễu thường thực hiện **nhiều dịch vụ trong cùng một lần khám** (VD: chiết xuất nhân mụn + laser + chăm sóc cơ bản). Bảng này lưu danh sách đầy đủ các dịch vụ đã làm, được bác sĩ hoặc admin bổ sung trong quá trình khám.
 
 ```sql
 CREATE TABLE appointment_services (
@@ -422,7 +422,7 @@ CREATE TABLE appointment_services (
     service_id      INT UNSIGNED NOT NULL,
     quantity        INT NOT NULL DEFAULT 1,
     unit_price      DECIMAL(12,0) NOT NULL COMMENT 'Snapshot giá tại thời điểm thực hiện',
-    added_by        INT UNSIGNED NOT NULL COMMENT 'user_id người thêm dịch vụ (bác sĩ/lễ tân)',
+    added_by        INT UNSIGNED NOT NULL COMMENT 'user_id người thêm dịch vụ (bác sĩ/admin)',
     added_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     notes           TEXT COMMENT 'Ghi chú riêng cho dịch vụ này',
     FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
@@ -434,7 +434,7 @@ CREATE TABLE appointment_services (
 
 **Luồng sử dụng:**
 - Khi đặt lịch: tự động thêm `primary_service_id` vào `appointment_services`
-- Trong lúc khám: bác sĩ/lễ tân có thể thêm dịch vụ phát sinh
+- Trong lúc khám: bác sĩ hoặc admin có thể thêm dịch vụ phát sinh
 - Khi lập hóa đơn: hệ thống tổng hợp từ `appointment_services` (không cần nhập tay)
 
 ---
@@ -447,9 +447,9 @@ CREATE TABLE appointments (
     patient_id          INT UNSIGNED NOT NULL,
     doctor_id           INT UNSIGNED NOT NULL,
     primary_service_id  INT UNSIGNED COMMENT 'Dịch vụ chính / phân loại lịch hẹn',
-    visit_type          ENUM('scheduled','walk_in','follow_up')
+    visit_type          ENUM('scheduled','follow_up')
                         NOT NULL DEFAULT 'scheduled',
-    booking_source      ENUM('patient_app','phone','frontdesk','admin')
+    booking_source      ENUM('patient_app','admin','doctor')
                         NOT NULL DEFAULT 'patient_app',
     appointment_date    DATE NOT NULL,
     appointment_time    TIME NOT NULL,
@@ -463,13 +463,18 @@ CREATE TABLE appointments (
     cancelled_by        INT UNSIGNED COMMENT 'user_id người hủy',
     cancelled_at        DATETIME,
     confirmed_at        DATETIME,
+    doctor_note         TEXT COMMENT 'Ghi chú phản hồi từ bác sĩ cho bệnh nhân',
+    proposed_date       DATE COMMENT 'Ngày bác sĩ đề nghị đổi/hẹn lại',
+    proposed_time       TIME COMMENT 'Giờ bác sĩ đề nghị đổi/hẹn lại',
+    discount_percent    DECIMAL(5,2) DEFAULT 0 COMMENT 'Ưu đãi bác sĩ đề xuất nếu cần dời lịch',
+    discount_note       VARCHAR(255) COMMENT 'Lý do hoặc nội dung ưu đãi',
     checked_in_at       DATETIME,
     started_at          DATETIME,
     completed_at        DATETIME,
     rescheduled_from_id INT UNSIGNED COMMENT 'Lịch gốc nếu đây là lịch đổi',
     reminder_24h_sent   TINYINT(1) DEFAULT 0 COMMENT 'Đã gửi nhắc trước 24 tiếng',
     reminder_2h_sent    TINYINT(1) DEFAULT 0 COMMENT 'Đã gửi nhắc trước 2 tiếng',
-    notes               TEXT COMMENT 'Ghi chú thêm của lễ tân',
+    notes               TEXT COMMENT 'Ghi chú bổ sung của hệ thống hoặc bác sĩ',
     created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (patient_id) REFERENCES patients(id),
@@ -485,9 +490,9 @@ CREATE TABLE appointments (
 > **Lưu ý:** `primary_service_id` chỉ dùng để phân loại lịch hẹn. Danh sách dịch vụ thực tế thực hiện trong buổi khám được quản lý ở bảng `appointment_services` bên dưới.
 
 **Giải thích trạng thái:**
-- `pending` — Vừa đặt, chờ lễ tân xác nhận
-- `confirmed` — Lễ tân đã xác nhận, đã gửi email
-- `checked_in` — Bệnh nhân đã đến, lễ tân check-in
+- `pending` — Vừa đặt, chờ bác sĩ duyệt hoặc phản hồi đề nghị hoãn
+- `confirmed` — Bác sĩ đã chốt lịch
+- `checked_in` — Bệnh nhân đã đến phòng khám và đã được ghi nhận đến khám
 - `in_progress` — Đang khám với bác sĩ
 - `completed` — Khám xong, có kết quả
 - `cancelled` — Đã hủy (bệnh nhân hoặc phòng khám)
@@ -562,15 +567,39 @@ CREATE TABLE medicine_batches (
     import_quantity     INT NOT NULL,
     remaining_quantity  INT NOT NULL,
     import_unit_cost    DECIMAL(12,0) NOT NULL DEFAULT 0,
-    supplier_name       VARCHAR(200),
+    supplier_id         INT UNSIGNED NOT NULL,
     imported_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_active           TINYINT(1) NOT NULL DEFAULT 1,
     FOREIGN KEY (medicine_id) REFERENCES medicines(id),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
     UNIQUE KEY uq_batch (medicine_id, batch_number),
     INDEX idx_expiry (expiry_date),
     INDEX idx_remaining (remaining_quantity)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
+
+---
+
+#### Bảng `suppliers` — Nhà cung cấp thuốc
+
+```sql
+CREATE TABLE suppliers (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name                VARCHAR(200) NOT NULL,
+    contact_person      VARCHAR(150),
+    phone               VARCHAR(15),
+    email               VARCHAR(150),
+    address             TEXT,
+    tax_code            VARCHAR(50),
+    notes               TEXT,
+    is_active           TINYINT(1) NOT NULL DEFAULT 1,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_supplier_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+> Hệ thống phải có danh mục `suppliers` để dược sĩ hoặc admin quản lý nguồn nhập thuốc. Khi chưa có nhà cung cấp thì không nên hoàn tất phiếu nhập kho mới.
 
 ---
 
@@ -630,7 +659,7 @@ CREATE TABLE invoices (
     id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     appointment_id      INT UNSIGNED NOT NULL UNIQUE,
     patient_id          INT UNSIGNED NOT NULL,
-    cashier_id          INT UNSIGNED COMMENT 'Thu ngân tạo hóa đơn',
+    pharmacist_id       INT UNSIGNED COMMENT 'Dược sĩ lập hóa đơn và thu tiền',
     invoice_number      VARCHAR(20) NOT NULL UNIQUE COMMENT 'PKD-2026-0001',
     invoice_status      ENUM('draft','issued','partially_paid','paid','cancelled','refunded')
                         NOT NULL DEFAULT 'draft',
@@ -648,7 +677,7 @@ CREATE TABLE invoices (
     created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (appointment_id) REFERENCES appointments(id),
     FOREIGN KEY (patient_id) REFERENCES patients(id),
-    FOREIGN KEY (cashier_id) REFERENCES users(id),
+    FOREIGN KEY (pharmacist_id) REFERENCES users(id),
     FOREIGN KEY (approved_discount_by) REFERENCES users(id),
     INDEX idx_patient (patient_id),
     INDEX idx_status (payment_status),
@@ -790,16 +819,24 @@ phone:     optional, 10-11 chữ số VN
 9. Frontend lưu `access_token` vào memory (không localStorage)
 10. Redirect tới dashboard theo role
 
-#### 1.3 Phân quyền theo role
+**Điều hướng UI sau đăng nhập:**
+- `patient` → vẫn ở trang chủ, nhưng mở thêm khu đặt lịch và lịch hẹn của tôi
+- `doctor` → vào thẳng dashboard bác sĩ
+- `pharmacist` → vào thẳng dashboard dược sĩ
+- `admin` → vào dashboard quản trị
 
-| Role | Quyền truy cập |
+**Đăng xuất:**
+- Xóa token phiên hiện tại
+- Quay lại màn hình đăng nhập
+
+#### 1.3 Phân quyền theo vai trò
+
+| Vai trò | Quyền truy cập |
 |---|---|
-| `admin` | Toàn bộ hệ thống, báo cáo, quản lý users |
-| `doctor` | Lịch hẹn của mình, hồ sơ bệnh nhân, kê đơn |
-| `receptionist` | Quản lý lịch hẹn, check-in, thông báo |
-| `cashier` | Tạo hóa đơn, thu tiền, lịch sử thanh toán |
-| `pharmacist` | Xem đơn thuốc, xuất kho, quản lý tồn kho |
-| `patient` | Lịch hẹn của mình, hồ sơ cá nhân, hóa đơn |
+| `admin` | Toàn bộ hệ thống, báo cáo, quản lý tài khoản, quản lý lịch khám, tạo tài khoản bác sĩ/dược sĩ/bệnh nhân, đặt lại mật khẩu |
+| `doctor` | Lịch hẹn của mình, duyệt/chốt lịch, đề nghị hoãn lịch, hồ sơ bệnh nhân, danh sách bệnh nhân, kê đơn |
+| `pharmacist` | Xem đơn thuốc, chuẩn bị thuốc, quản lý tồn kho, quản lý nhà cung cấp, thu tiền, in hóa đơn |
+| `patient` | Đăng ký, đăng nhập, xem trang chủ, chọn bác sĩ, xem lịch rảnh, đặt lịch, xem lịch của mình, hồ sơ cá nhân, hóa đơn |
 
 ---
 
@@ -810,8 +847,8 @@ phone:     optional, 10-11 chữ số VN
 **Luồng chi tiết:**
 
 1. Bệnh nhân chọn dịch vụ chính cần khám (VD: Điều trị mụn) — lưu vào `primary_service_id`, tự động thêm vào `appointment_services`
-2. Hệ thống hiện danh sách bác sĩ có chuyên khoa phù hợp
-3. Bệnh nhân chọn bác sĩ → xem lịch trống theo tuần (dạng calendar)
+2. Hệ thống hiện danh sách bác sĩ có chuyên khoa phù hợp và các bác sĩ đang còn khung giờ rảnh
+3. Bệnh nhân chọn đúng bác sĩ mình muốn khám → xem lịch trống theo tuần (dạng calendar)
 4. Gọi API `GET /api/v1/appointments/available-slots?doctor_id=1&date=2026-04-01`
 5. Backend tính slot trống:
    - Kiểm tra `clinic_holidays` — nếu ngày đó là ngày lễ → trả về rỗng
@@ -824,8 +861,8 @@ phone:     optional, 10-11 chữ số VN
 7. Gọi API `POST /api/v1/appointments`
 8. Backend kiểm tra slot chưa bị đặt (race condition: dùng DB transaction + SELECT FOR UPDATE)
 9. Tạo bản ghi `appointments` với status = `pending`; tạo bản ghi `appointment_services` cho dịch vụ chính
-10. Gửi thông báo cho lễ tân qua WebSocket
-11. Gửi email xác nhận đặt lịch cho bệnh nhân
+10. Gửi thông báo cho bác sĩ phụ trách qua WebSocket hoặc notification
+11. Gửi email xác nhận đã nhận yêu cầu đặt lịch cho bệnh nhân
 12. Trả về thông tin lịch hẹn
 
 **Kiểm tra hợp lệ khi đặt lịch:**
@@ -835,53 +872,57 @@ phone:     optional, 10-11 chữ số VN
 - Slot phải nằm trong giờ làm việc của bác sĩ
 - Số lượng bệnh nhân trong slot chưa đạt `max_patients`
 
-#### 2.2 Lễ tân xác nhận lịch
+#### 2.2 Bác sĩ duyệt và chốt lịch
 
-1. Lễ tân xem danh sách lịch `pending` trên dashboard
-2. Kiểm tra thông tin bệnh nhân và ghi chú
-3. Gọi API `PATCH /api/v1/appointments/{id}/confirm`
+1. Bác sĩ xem danh sách lịch `pending` của chính mình trên dashboard
+2. Bác sĩ đối chiếu thời gian rảnh, chuyên môn và ghi chú từ bệnh nhân
+3. Gọi API `PATCH /api/v1/appointments/{id}/approve`
 4. Cập nhật status → `confirmed`, ghi `confirmed_at`
-5. Gửi email xác nhận chính thức kèm thông tin chi tiết (địa chỉ, bản đồ, lưu ý)
-6. Tạo notification cho bệnh nhân
-7. Gửi reminder email trước 24h và 2h qua cron job
+5. Gửi email + notification xác nhận chính thức cho bệnh nhân
+6. Hệ thống tiếp tục gửi reminder trước 24h và 2h qua cron job
 
-#### 2.3 Check-in khi bệnh nhân đến
+#### 2.3 Bác sĩ đề nghị hoãn hoặc đổi giờ khám
 
-1. Bệnh nhân đến phòng khám, xuất trình tên/mã lịch hẹn
-2. Lễ tân tìm kiếm theo tên hoặc số điện thoại
-3. Xác nhận danh tính → Gọi API `PATCH /api/v1/appointments/{id}/check-in`
+1. Nếu khung giờ bệnh nhân chọn không còn phù hợp, bác sĩ mở lịch hẹn đang `pending`
+2. Bác sĩ nhập:
+   - `doctor_note` để giải thích cho bệnh nhân
+   - `proposed_date` và `proposed_time` nếu muốn đề nghị giờ khác
+   - `discount_percent` hoặc `discount_note` nếu có ưu đãi xin lỗi/khuyến khích đổi lịch
+3. Gọi API `PATCH /api/v1/appointments/{id}/propose-reschedule`
+4. Hệ thống gửi notification và email cho bệnh nhân
+5. Bệnh nhân vào `Lịch hẹn của tôi` để xem đề nghị, ghi chú của bác sĩ và ưu đãi đi kèm
+6. Khi bệnh nhân đồng ý, hệ thống cập nhật lịch sang giờ mới và chuyển status về `confirmed`
+
+#### 2.4 Check-in khi bệnh nhân đến
+
+1. Bệnh nhân đến phòng khám, xuất trình mã lịch hoặc tên
+2. Bác sĩ hoặc quản trị viên tìm lịch hẹn đã `confirmed`
+3. Gọi API `PATCH /api/v1/appointments/{id}/check-in`
 4. Cập nhật status → `checked_in`, sinh `queue_number`, ghi `checked_in_at`
-5. Thông báo cho bác sĩ qua WebSocket: "Bệnh nhân [tên] đã đến, STT [số]"
-6. Hệ thống thêm bệnh nhân vào hàng chờ
+5. Hệ thống thêm bệnh nhân vào hàng chờ khám
+6. Nếu có màn hình bệnh nhân, có thể cho bệnh nhân tự đánh dấu `Tôi đã đến` trước khi bác sĩ xác nhận
 
-#### 2.4 Hủy lịch hẹn
+#### 2.5 Hủy lịch hẹn
 
 **Bệnh nhân hủy:**
 - Chỉ được hủy khi status là `pending` hoặc `confirmed`
 - Phải hủy trước 4 tiếng so với giờ hẹn
 - Nhập lý do hủy
 - Cập nhật `cancelled_at`, `cancelled_by`
-- Gửi thông báo cho bác sĩ và lễ tân
+- Gửi thông báo cho bác sĩ
 
 **Phòng khám hủy:**
-- Admin/Lễ tân có thể hủy bất kỳ lịch nào
+- Admin hoặc bác sĩ phụ trách có thể hủy lịch của mình
 - Phải nhập lý do và có ghi chú xin lỗi
 - Gửi email thông báo + đề xuất lịch thay thế cho bệnh nhân
 
-#### 2.5 Đổi lịch hẹn
+#### 2.6 Đổi lịch hẹn
 
-1. Bệnh nhân/lễ tân chọn lịch hiện tại → chức năng `reschedule`
+1. Bệnh nhân hoặc bác sĩ chọn lịch hiện tại → chức năng `reschedule`
 2. Hệ thống chỉ cho đổi lịch khi trạng thái đang là `pending` hoặc `confirmed`
 3. Chọn slot mới và tạo lịch mới với `rescheduled_from_id` trỏ về lịch cũ
 4. Lịch cũ cập nhật `status = cancelled`, lưu lý do "rescheduled"
 5. Giữ lại lịch sử đổi lịch để đo tỷ lệ đổi/hủy và truy vết CSKH
-
-#### 2.6 Khách vãng lai (walk-in)
-
-1. Lễ tân tạo lịch mới với `visit_type = walk_in`, `booking_source = frontdesk`
-2. Hệ thống xếp vào hàng chờ của bác sĩ đang nhận khám
-3. Nếu phòng khám có nhiều bác sĩ cùng chuyên khoa, lễ tân có thể chọn bác sĩ ít tải nhất
-4. Walk-in vẫn đi chung luồng: check-in → khám → hóa đơn → cấp thuốc
 
 ---
 
@@ -907,22 +948,23 @@ phone:     optional, 10-11 chữ số VN
 ```
 
 **Bổ sung dịch vụ phát sinh trong lúc khám:**
-- Bác sĩ hoặc lễ tân có thể thêm dịch vụ vào `appointment_services` trong khi khám
+- Bác sĩ hoặc admin có thể thêm dịch vụ vào `appointment_services` trong khi khám
 - VD: đặt lịch ban đầu là "Điều trị mụn" nhưng sau khi khám bác sĩ làm thêm "Laser xoá thâm"
 - Mỗi dịch vụ thêm ghi nhận `unit_price` tại thời điểm thực hiện (snapshot)
-- Thu ngân sẽ tổng hợp từ `appointment_services` khi lập hóa đơn — không cần nhập tay
+- Hệ thống hóa đơn sẽ tổng hợp từ `appointment_services` khi lập hóa đơn — không cần nhập tay
 
 **Kê đơn thuốc:**
 1. Tìm kiếm thuốc theo tên/hoạt chất trong kho
 2. Hệ thống cảnh báo nếu thuốc gần hết hoặc hết hạn
 3. Hệ thống cảnh báo nếu thuốc trong đơn trùng với dị ứng đã ghi trong hồ sơ bệnh nhân (`allergy_notes`)
 4. Với mỗi thuốc: nhập số lượng, liều dùng, tần suất, hướng dẫn
-5. Lưu đơn thuốc với status = `pending`
-6. Gọi `PATCH /api/v1/appointments/{id}/complete` → status = `completed`, ghi `completed_at`
+5. Bác sĩ xem trước số lượng thuốc khả dụng trong kho để tránh kê vượt tồn
+6. Lưu đơn thuốc với status = `pending`
+7. Gọi `PATCH /api/v1/appointments/{id}/complete` → status = `completed`, ghi `completed_at`
+8. Hệ thống sinh phiếu thuốc gửi sang dược sĩ
 
 **Sau khi hoàn thành khám:**
-- Thông báo tự động đến Thu ngân: "Bệnh nhân [tên] khám xong, chờ thanh toán"
-- Thông báo tự động đến Dược sĩ: "Có đơn thuốc mới cần chuẩn bị"
+- Thông báo tự động đến Dược sĩ: "Có phiếu thuốc mới từ bác sĩ cần chuẩn bị"
 - Gửi email kết quả khám cho bệnh nhân
 
 ---
@@ -941,17 +983,26 @@ phone:     optional, 10-11 chữ số VN
    - Cho phép `partially_dispensed` từng dòng thuốc
    - Hoặc báo bác sĩ điều chỉnh đơn
 
-#### 4.2 Giao thuốc sau thanh toán
+#### 4.2 Dược sĩ thanh toán và giao thuốc
 
-1. Sau khi hóa đơn đạt trạng thái `paid` hoặc được phép công nợ, dược sĩ mở đơn ở trạng thái `awaiting_payment`
-2. Xác nhận số lượng giao thực tế từng dòng thuốc
-3. Hệ thống tự động:
+1. Dược sĩ mở đơn ở trạng thái `awaiting_payment`
+2. Hệ thống tự động tạo hoặc mở hóa đơn gắn với lịch khám
+3. Dược sĩ kiểm tra:
+   - phí khám
+   - dịch vụ phát sinh
+   - tiền thuốc
+   - ưu đãi / hỗ trợ nếu có
+4. Dược sĩ thu tiền trực tiếp tại quầy phát thuốc
+5. Sau khi thanh toán thành công, dược sĩ xác nhận số lượng giao thực tế từng dòng thuốc
+6. Hệ thống tự động:
    - Trừ tồn theo từng `medicine_batches`
    - Cập nhật `medicines.current_stock`
    - Ghi log vào `inventory_logs`
    - Cập nhật `dispensed_quantity`, `dispensed_by`, `dispensed_at`, `picked_up_at`
-4. Nếu giao đủ: `status = dispensed`
-5. Nếu giao thiếu: `status = partially_dispensed`
+   - Sinh mã hóa đơn
+   - In hóa đơn kèm danh sách thuốc đã giao
+7. Nếu giao đủ: `status = dispensed`
+8. Nếu giao thiếu: `status = partially_dispensed`
 
 #### 4.3 Cảnh báo tồn kho
 
@@ -964,9 +1015,18 @@ Hệ thống tự động cảnh báo khi:
 #### 4.4 Nhập kho thuốc mới
 
 1. Dược sĩ/Admin tạo phiếu nhập kho
-2. Nhập: tên thuốc, số lượng, số lô, hạn sử dụng, giá nhập, nhà cung cấp
-3. Hệ thống tạo `medicine_batches`, cộng dồn vào `medicines.current_stock`
-4. Ghi log `inventory_logs` với action = `import`
+2. Chọn hoặc tạo `nhà cung cấp`
+3. Nhập: tên thuốc, số lượng, số lô, hạn sử dụng, giá nhập, nhà cung cấp
+4. Nếu chưa có nhà cung cấp thì phải bổ sung trước khi hoàn tất phiếu nhập
+5. Hệ thống tạo `medicine_batches`, cộng dồn vào `medicines.current_stock`
+6. Ghi log `inventory_logs` với action = `import`
+
+#### 4.5 Quản lý nhà cung cấp
+
+1. Dược sĩ/Admin xem danh sách nhà cung cấp
+2. Thêm mới: tên nhà cung cấp, người liên hệ, số điện thoại, email, địa chỉ
+3. Đánh dấu ngưng hợp tác khi cần
+4. Tra cứu lịch sử các lô thuốc đã nhập từ từng nhà cung cấp
 
 ---
 
@@ -974,15 +1034,15 @@ Hệ thống tự động cảnh báo khi:
 
 > Ghi chú phạm vi: phần "BHYT" ở Phase 1 chỉ là **mức hỗ trợ/giảm trừ nhập tay** trên hóa đơn. Nếu cần tích hợp thanh toán/claim BHYT thật, nên tách thành phase riêng.
 
-#### 5.1 Thu ngân lập hóa đơn
+#### 5.1 Dược sĩ lập hóa đơn
 
-1. Thu ngân tìm bệnh nhân vừa khám xong (status = `completed`)
+1. Dược sĩ tìm bệnh nhân vừa khám xong (status = `completed`) hoặc đơn thuốc đang `awaiting_payment`
 2. Gọi API `POST /api/v1/invoices/generate/{appointment_id}`
 3. Hệ thống tự động tổng hợp thành `invoice_items`:
    - Phí khám: `doctors.consultation_fee`
    - Phí dịch vụ: tổng hợp từ **`appointment_services`** (bao gồm cả dịch vụ bổ sung trong lúc khám)
    - Tiền thuốc: tổng `prescription_items.quantity × unit_price`
-4. Thu ngân kiểm tra và áp dụng:
+4. Dược sĩ kiểm tra và áp dụng:
    - Giảm giá (%) hoặc số tiền cố định
    - Hỗ trợ nội bộ/BHYT nhập tay (nếu có)
    - Người duyệt giảm giá nếu vượt hạn mức
@@ -993,7 +1053,7 @@ Hệ thống tự động cảnh báo khi:
 
 ```
 Phương thức hỗ trợ:
-- Tiền mặt: thu ngân nhập số tiền nhận, hệ thống tính tiền thừa
+- Tiền mặt: dược sĩ nhập số tiền nhận, hệ thống tính tiền thừa
 - Thẻ ngân hàng: nhập số tham chiếu giao dịch
 - Chuyển khoản: nhập mã giao dịch, hệ thống chờ xác nhận
 - Hỗ trợ nội bộ/BHYT nhập tay: nhập số tiền hỗ trợ, lý do, người duyệt (nếu cần)
@@ -1005,7 +1065,8 @@ Phương thức hỗ trợ:
 4. Nếu thanh toán đủ: `payment_status = paid`, `paid_at = now()`
 5. Sinh mã hóa đơn tự động: `PKD-2026-0001`
 6. Xuất PDF hóa đơn (dùng thư viện reportlab Python)
-7. Gửi email hóa đơn cho bệnh nhân
+7. In hóa đơn kèm danh sách thuốc cho bệnh nhân
+8. Gửi email hóa đơn cho bệnh nhân
 
 #### 5.3 Hoàn tiền / hủy hóa đơn
 
@@ -1028,6 +1089,38 @@ Hiển thị realtime:
 - Tồn kho thuốc sắp hết (< reorder level)
 - Biểu đồ lịch hẹn theo giờ trong ngày
 - Tất cả chỉ số thời gian lấy từ `checked_in_at`, `started_at`, `completed_at`
+
+#### 6.1A Quản lý lịch khám
+
+- Chỉ `admin` mới được tạo và chỉnh khung giờ khám của bác sĩ
+- Chỉ `admin` mới được đánh dấu khoảng `bác sĩ bận` để giao diện booking hiển thị slot màu vàng
+- Bác sĩ chỉ xem lịch khám của mình, không được sửa trực tiếp
+- `admin` quản lý:
+  - lịch làm việc theo tuần
+  - số bệnh nhân tối đa mỗi khung giờ
+  - ngày nghỉ đột xuất của bác sĩ
+  - ngày nghỉ toàn phòng khám
+  - ghi chú điều chỉnh lịch
+
+#### 6.1B Quản lý tài khoản
+
+- `admin` xem danh sách tất cả tài khoản bệnh nhân, bác sĩ, dược sĩ
+- `admin` được tạo tài khoản bác sĩ
+- `admin` được tạo tài khoản dược sĩ
+- `admin` có thể tạo tài khoản bệnh nhân khi cần nhập hộ
+- Bác sĩ không được tạo tài khoản bác sĩ khác
+- Dược sĩ không được tạo tài khoản dược sĩ khác
+
+#### 6.1C Đặt lại mật khẩu
+
+- Chỉ `admin` mới được đặt lại mật khẩu cho tài khoản khác
+- Form đặt lại mật khẩu cần có:
+  - họ tên tài khoản
+  - vai trò
+  - mật khẩu mới
+  - xác nhận mật khẩu mới
+  - tùy chọn buộc đổi mật khẩu ở lần đăng nhập tiếp theo
+- Sau khi đặt lại thành công, hệ thống ghi nhận người thực hiện và thời điểm đặt lại
 
 #### 6.2 Báo cáo doanh thu
 
@@ -1080,6 +1173,7 @@ backend/
 │   │   ├── prescription.py
 │   │   ├── medicine.py
 │   │   ├── medicine_batch.py
+│   │   ├── supplier.py
 │   │   ├── invoice.py
 │   │   ├── invoice_item.py
 │   │   ├── payment_transaction.py
@@ -1097,6 +1191,7 @@ backend/
 │   │   ├── medical_records.py
 │   │   ├── prescriptions.py
 │   │   ├── medicines.py
+│   │   ├── suppliers.py
 │   │   ├── invoices.py
 │   │   └── reports.py
 │   ├── services/              # Business logic
@@ -1168,29 +1263,39 @@ async def get_available_slots(
     doctor_id: int,
     date: str,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user)
+    _ = Depends(get_current_user)
 ):
     """Lấy danh sách slot trống của bác sĩ theo ngày"""
     service = AppointmentService(db)
     return service.get_available_slots(doctor_id, date)
 
-@router.patch("/{id}/confirm")
-async def confirm_appointment(
+@router.patch("/{id}/approve")
+async def approve_appointment(
     id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(require_role(["admin", "receptionist"]))
+    current_user = Depends(require_role(["doctor", "admin"]))
 ):
-    """Lễ tân xác nhận lịch hẹn"""
+    """Bác sĩ duyệt và chốt lịch hẹn"""
     service = AppointmentService(db)
-    return await service.confirm_appointment(id, current_user)
+    return await service.approve_appointment(id, current_user)
+
+@router.patch("/{id}/propose-reschedule")
+async def propose_reschedule(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_role(["doctor", "admin"]))
+):
+    """Bác sĩ đề nghị hoãn/đổi giờ kèm ghi chú và ưu đãi"""
+    service = AppointmentService(db)
+    return await service.propose_reschedule(id, current_user)
 
 @router.patch("/{id}/check-in")
 async def check_in(
     id: int,
     db: Session = Depends(get_db),
-    current_user = Depends(require_role(["receptionist", "admin"]))
+    current_user = Depends(require_role(["doctor", "admin"]))
 ):
-    """Check-in khi bệnh nhân đến"""
+    """Ghi nhận bệnh nhân đã đến khám"""
     service = AppointmentService(db)
     return await service.check_in(id, current_user)
 ```
@@ -1198,7 +1303,7 @@ async def check_in(
 ### Danh sách API Endpoints đầy đủ
 
 ```
-Authentication
+Xac thuc
 POST   /api/v1/auth/register          Đăng ký tài khoản
 POST   /api/v1/auth/login             Đăng nhập
 POST   /api/v1/auth/logout            Đăng xuất
@@ -1207,72 +1312,88 @@ POST   /api/v1/auth/verify-email      Xác thực email
 POST   /api/v1/auth/forgot-password   Quên mật khẩu
 POST   /api/v1/auth/reset-password    Đặt lại mật khẩu
 
-Patients
-GET    /api/v1/patients               Danh sách bệnh nhân (admin/receptionist)
+Quản trị tài khoản
+POST   /api/v1/admin/accounts/doctor          Tạo tài khoản bác sĩ
+POST   /api/v1/admin/accounts/pharmacist      Tạo tài khoản dược sĩ
+POST   /api/v1/admin/accounts/patient         Tạo tài khoản bệnh nhân
+PATCH  /api/v1/admin/accounts/{id}/reset-password Đặt lại mật khẩu tài khoản
+PATCH  /api/v1/admin/accounts/{id}/lock       Khóa tài khoản
+PATCH  /api/v1/admin/accounts/{id}/unlock     Mở khóa tài khoản
+
+Benh nhan
+GET    /api/v1/patients               Danh sách bệnh nhân (admin/doctor)
 GET    /api/v1/patients/{id}          Chi tiết bệnh nhân
 PUT    /api/v1/patients/{id}          Cập nhật thông tin
 GET    /api/v1/patients/{id}/history  Lịch sử khám bệnh
 
-Doctors
+Bac si
 GET    /api/v1/doctors                Danh sách bác sĩ (public)
 GET    /api/v1/doctors/{id}           Chi tiết bác sĩ
-GET    /api/v1/doctors/{id}/schedule  Lịch làm việc
-POST   /api/v1/doctors/{id}/schedule  Cập nhật lịch làm việc
-POST   /api/v1/doctors/{id}/leave     Ghi ngày nghỉ đột xuất
-DELETE /api/v1/doctors/{id}/leave/{date} Huỷ ngày nghỉ
+GET    /api/v1/doctors/{id}/schedule  Xem lịch làm việc bác sĩ
 
-Clinic Holidays
+Quản trị lịch khám
+POST   /api/v1/admin/doctors/{id}/schedule     Tạo/cập nhật lịch làm việc bác sĩ
+POST   /api/v1/admin/doctors/{id}/busy-slots   Đánh dấu khoảng bận của bác sĩ
+POST   /api/v1/admin/doctors/{id}/leave        Ghi ngày nghỉ đột xuất
+DELETE /api/v1/admin/doctors/{id}/leave/{date} Huỷ ngày nghỉ
+
+Ngay nghi phong kham
 GET    /api/v1/holidays               Danh sách ngày lễ
 POST   /api/v1/holidays               Thêm ngày lễ (admin)
 DELETE /api/v1/holidays/{id}          Xoá ngày lễ (admin)
 
-Appointments
+Lich hen
 GET    /api/v1/appointments           Danh sách (lọc theo role)
 POST   /api/v1/appointments           Đặt lịch mới
 GET    /api/v1/appointments/{id}      Chi tiết lịch hẹn
-PATCH  /api/v1/appointments/{id}/confirm    Xác nhận
-PATCH  /api/v1/appointments/{id}/check-in   Check-in
+PATCH  /api/v1/appointments/{id}/approve    Bác sĩ chốt lịch
+PATCH  /api/v1/appointments/{id}/propose-reschedule Đề nghị hoãn/đổi giờ + ghi chú/ưu đãi
+PATCH  /api/v1/appointments/{id}/check-in   Ghi nhận bệnh nhân đã đến
 PATCH  /api/v1/appointments/{id}/start      Bắt đầu khám
 PATCH  /api/v1/appointments/{id}/complete   Hoàn thành khám
 PATCH  /api/v1/appointments/{id}/reschedule Đổi lịch
-POST   /api/v1/appointments/walk-in   Tạo lịch cho khách vãng lai
 DELETE /api/v1/appointments/{id}      Hủy lịch hẹn
 GET    /api/v1/appointments/available-slots Slot trống
 POST   /api/v1/appointments/{id}/services   Thêm dịch vụ phát sinh
 DELETE /api/v1/appointments/{id}/services/{sid} Xoá dịch vụ phát sinh
 
-Medical Records
+Benh an
 POST   /api/v1/medical-records        Tạo hồ sơ bệnh án
 GET    /api/v1/medical-records/{id}   Chi tiết hồ sơ
 PUT    /api/v1/medical-records/{id}   Cập nhật hồ sơ
 
-Prescriptions
+Don thuoc
 POST   /api/v1/prescriptions          Tạo đơn thuốc
 GET    /api/v1/prescriptions/{id}     Chi tiết đơn
 PATCH  /api/v1/prescriptions/{id}/prepare   Chuẩn bị thuốc
 PATCH  /api/v1/prescriptions/{id}/dispense  Dược sĩ xuất thuốc
 
-Medicines
+Nha cung cap
+GET    /api/v1/suppliers              Danh sách nhà cung cấp
+POST   /api/v1/suppliers              Tạo nhà cung cấp mới
+PUT    /api/v1/suppliers/{id}         Cập nhật nhà cung cấp
+
+Thuoc
 GET    /api/v1/medicines              Danh sách thuốc
 POST   /api/v1/medicines              Thêm thuốc mới
 PUT    /api/v1/medicines/{id}         Cập nhật thuốc
 POST   /api/v1/medicines/{id}/batches/import  Nhập kho theo lô
 GET    /api/v1/medicines/low-stock    Thuốc sắp hết
 
-Invoices
+Hoa don
 POST   /api/v1/invoices/generate/{appointment_id}  Tạo hóa đơn
 GET    /api/v1/invoices/{id}          Chi tiết hóa đơn
-PATCH  /api/v1/invoices/{id}/pay      Thanh toán
+PATCH  /api/v1/invoices/{id}/pay      Dược sĩ ghi nhận thanh toán
 POST   /api/v1/invoices/{id}/refund   Hoàn tiền
 GET    /api/v1/invoices/{id}/pdf      Xuất PDF
 
-Reports
+Bao cao
 GET    /api/v1/reports/revenue        Báo cáo doanh thu
 GET    /api/v1/reports/appointments   Báo cáo lịch hẹn
 GET    /api/v1/reports/inventory      Báo cáo tồn kho
 GET    /api/v1/reports/dashboard      Dữ liệu dashboard
 
-Notifications
+Thong bao
 GET    /api/v1/notifications          Danh sách thông báo
 PATCH  /api/v1/notifications/{id}/read   Đánh dấu đã đọc
 PATCH  /api/v1/notifications/read-all   Đọc tất cả
@@ -1317,21 +1438,21 @@ frontend/
 │   │   │   └── MyInvoices.jsx
 │   │   ├── doctor/            # Giao diện bác sĩ
 │   │   │   ├── DoctorDashboard.jsx
+│   │   │   ├── AppointmentApproval.jsx
+│   │   │   ├── PatientList.jsx
 │   │   │   ├── TodayPatients.jsx
 │   │   │   ├── MedicalRecord.jsx
 │   │   │   └── PrescriptionForm.jsx
-│   │   ├── receptionist/      # Giao diện lễ tân
-│   │   │   ├── AppointmentQueue.jsx
-│   │   │   └── CheckIn.jsx
-│   │   ├── cashier/           # Giao diện thu ngân
-│   │   │   ├── InvoiceList.jsx
-│   │   │   └── PaymentForm.jsx
 │   │   ├── pharmacist/        # Giao diện dược sĩ
 │   │   │   ├── PrescriptionQueue.jsx
-│   │   │   └── InventoryPage.jsx
+│   │   │   ├── InventoryPage.jsx
+│   │   │   ├── BillingPage.jsx
+│   │   │   └── SupplierPage.jsx
 │   │   └── admin/             # Giao diện quản trị
 │   │       ├── AdminDashboard.jsx
-│   │       ├── UserManagement.jsx
+│   │       ├── AccountManagement.jsx
+│   │       ├── PasswordResetDialog.jsx
+│   │       ├── ScheduleManagement.jsx
 │   │       ├── DoctorManagement.jsx
 │   │       ├── MedicineManagement.jsx
 │   │       └── Reports.jsx
@@ -1356,90 +1477,92 @@ frontend/
 
 ### Màn hình theo từng role
 
-#### Bệnh nhân (Patient)
+#### Bệnh nhân
 
 | Màn hình | Chức năng |
 |---|---|
-| Trang chủ | Giới thiệu phòng khám, bác sĩ nổi bật, dịch vụ |
-| Đặt lịch | Chọn dịch vụ → bác sĩ → ngày giờ → xác nhận |
+| Trang chủ | Giới thiệu phòng khám, bác sĩ nổi bật, dịch vụ; hiển thị cho cả khách và bệnh nhân |
+| Đặt lịch | Chọn bác sĩ → xem lịch rảnh/bận → chọn ngày giờ → xác nhận |
 | Lịch hẹn của tôi | Xem, hủy lịch; lọc theo trạng thái |
 | Lịch sử khám | Xem kết quả chẩn đoán, đơn thuốc cũ |
 | Hóa đơn | Xem và tải hóa đơn PDF |
 | Hồ sơ | Cập nhật thông tin cá nhân, dị ứng thuốc |
 
-#### Bác sĩ (Doctor)
+#### Bác sĩ
 
 | Màn hình | Chức năng |
 |---|---|
-| Dashboard | Lịch làm việc hôm nay, số bệnh nhân chờ |
+| Trang điều khiển | Lịch làm việc hôm nay, số bệnh nhân chờ, lịch cần duyệt |
+| Duyệt lịch hẹn | Chốt lịch, đề nghị dời lịch, ghi chú cho bệnh nhân, thêm ưu đãi |
+| Bệnh nhân | Danh sách bệnh nhân, tìm kiếm hồ sơ, xem dị ứng thuốc và lịch sử khám |
 | Danh sách bệnh nhân hôm nay | Theo thứ tự, trạng thái |
 | Khám bệnh | Nhập triệu chứng, chẩn đoán, phác đồ |
-| Kê đơn thuốc | Tìm kiếm thuốc, nhập liều dùng |
+| Kê đơn thuốc | Tìm kiếm thuốc, nhập số lượng, kiểm tra tồn và gửi phiếu sang dược sĩ |
 | Lịch sử bệnh nhân | Xem toàn bộ lịch sử khám của bệnh nhân |
-| Lịch làm việc | Quản lý khung giờ khám |
+| Lịch làm việc | Chỉ xem lịch đã được quản trị cấu hình, không được tự sửa |
 
-#### Lễ tân (Receptionist)
-
-| Màn hình | Chức năng |
-|---|---|
-| Queue hôm nay | Danh sách lịch hẹn, cập nhật trạng thái |
-| Xác nhận lịch | Duyệt lịch pending, gửi email |
-| Check-in | Tìm bệnh nhân, xác nhận đến |
-| Tạo lịch nhanh | Đặt lịch trực tiếp cho bệnh nhân gọi điện |
-
-#### Thu ngân (Cashier)
-
-| Màn hình | Chức năng |
-|---|---|
-| Danh sách cần thanh toán | Bệnh nhân khám xong |
-| Tạo hóa đơn | Xem chi tiết, áp dụng giảm giá, hỗ trợ nội bộ/BHYT nhập tay |
-| Thanh toán | Nhập phương thức và số tiền |
-| Lịch sử hóa đơn | Tra cứu, in lại hóa đơn |
-
-#### Dược sĩ (Pharmacist)
+#### Dược sĩ
 
 | Màn hình | Chức năng |
 |---|---|
 | Đơn thuốc cần cấp | Danh sách `pending` / `awaiting_payment` theo thứ tự |
-| Xuất thuốc | Xác nhận từng thuốc, trừ kho theo lô sau thanh toán |
+| Giao thuốc & thanh toán | Xác nhận từng thuốc, thu tiền, trừ kho theo lô, in hóa đơn |
 | Tồn kho | Danh sách thuốc, lọc sắp hết/hết hạn |
 | Nhập kho | Nhập theo lô, hạn dùng, nhà cung cấp |
+| Nhà cung cấp | Quản lý thông tin nhà cung cấp thuốc |
 | Lịch sử xuất nhập | Tra cứu log |
+
+#### Quản trị
+
+| Màn hình | Chức năng |
+|---|---|
+| Trang điều khiển | Tổng quan vận hành, số lịch hẹn, doanh thu, cảnh báo kho |
+| Quản lý lịch khám | Tạo và chỉnh khung giờ khám, ngày nghỉ bác sĩ, ngày nghỉ phòng khám, khoảng bận |
+| Quản lý tài khoản | Xem danh sách tài khoản, khóa/mở khóa, phân vai trò |
+| Tạo tài khoản bác sĩ | Chỉ quản trị được tạo tài khoản bác sĩ và gắn hồ sơ bác sĩ |
+| Tạo tài khoản dược sĩ | Chỉ quản trị được tạo tài khoản dược sĩ |
+| Tạo tài khoản bệnh nhân | Quản trị có thể tạo tài khoản bệnh nhân nhập hộ |
+| Đặt lại mật khẩu | Quản trị đặt lại mật khẩu cho tài khoản khác và có thể buộc đổi mật khẩu lần đầu |
+| Báo cáo | Xem báo cáo doanh thu, bệnh nhân, tồn kho |
 
 ---
 
 ## 9. Luồng Nghiệp Vụ Đầy Đủ
 
 ```
-BỆNH NHÂN                  LỄ TÂN             BÁC SĨ         THU NGÂN        DƯỢC SĨ
-    │                          │                  │               │               │
-    │── Đặt lịch ──────────────►                  │               │               │
-    │                   [Nhận thông báo]           │               │               │
-    │◄─── Email xác nhận đặt lịch ─────────────────────────────────────────────────│
-    │                          │                  │               │               │
-    │                   [Xác nhận lịch]            │               │               │
-    │◄─── Email xác nhận chính thức ──────────────────────────────────────────────│
-    │                          │                  │               │               │
-    │── Đến phòng khám ────────►                  │               │               │
-    │                   [Check-in]                │               │               │
-    │                   ─── Thông báo ───────────►│               │               │
-    │                          │                  │               │               │
-    │                          │          [Gọi bệnh nhân vào]     │               │
-    │                          │          [Khám bệnh]              │               │
-    │                          │          [Nhập chẩn đoán]         │               │
-    │                          │          [Kê đơn thuốc]           │               │
-    │◄── Email kết quả khám ───────────────────────────────────────────────────────│
-    │                          │          ─── Thông báo ──────────►│               │
-    │                          │          ─── Thông báo ────────────────────────►  │
-    │                          │                  │               │        [Chuẩn bị thuốc]
-    │                          │                  │               │        [Xuất kho]
-    │── Đến quầy thu ngân ─────────────────────────────────────►  │               │
-    │                          │                  │      [Lập hóa đơn]            │
-    │                          │                  │      [Thu tiền]               │
-    │◄─── Email hóa đơn ───────────────────────────────────────────────────────────│
-    │                          │                  │               │               │
-    │── Nhận thuốc ────────────────────────────────────────────────────────────►   │
-    │                          │                  │               │               │
+BỆNH NHÂN                      BÁC SĨ                          DƯỢC SĨ
+    │                            │                                │
+    │── Đăng ký / đăng nhập ────►│                                │
+    │                            │                                │
+    │── Chọn bác sĩ + xem lịch rảnh/bận ─────────────────────────►│
+    │── Gửi yêu cầu đặt lịch ───►│                                │
+    │◄── Email đã nhận yêu cầu ───────────────────────────────────│
+    │                            │                                │
+    │                    [Duyệt / chốt lịch]                      │
+    │◄── Email xác nhận chính thức ───────────────────────────────│
+    │                            │                                │
+    │                    [Hoãn / đề nghị giờ khác]                │
+    │◄── Ghi chú + ưu đãi giảm giá (nếu có) ─────────────────────│
+    │                            │                                │
+    │── Đến phòng khám ─────────►│                                │
+    │                    [Check-in / xác nhận đã đến]             │
+    │                            │                                │
+    │                    [Gọi bệnh nhân vào]                      │
+    │                    [Khám bệnh]                              │
+    │                    [Nhập chẩn đoán]                         │
+    │                    [Nhập thuốc + số lượng]                  │
+    │                    [Gửi phiếu thuốc] ─────────────────────► │
+    │◄── Email kết quả khám ─────────────────────────────────────│
+    │                            │                       [Chuẩn bị thuốc]
+    │                            │                       [Kiểm tra tồn kho]
+    │                            │                       [Nếu thiếu: báo lại]
+    │── Đến quầy thuốc ─────────────────────────────────────────► │
+    │                                                    [Lập hóa đơn]
+    │                                                    [Thu tiền]
+    │                                                    [In hóa đơn + DS thuốc]
+    │◄─── Email hóa đơn ─────────────────────────────────────────│
+    │◄─── Nhận thuốc ────────────────────────────────────────────│
+    │                            │                                │
    XONG
 ```
 
@@ -1513,7 +1636,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON phong_kham_da_lieu.* TO 'pkdl_user'@'loc
 | Tiêu chí | Phiên bản cũ (PHP) | Phiên bản mới (Python + React) |
 |---|---|---|
 | **Kiến trúc** | Monolithic, PHP + HTML lẫn lộn | Tách biệt hoàn toàn FE/BE qua REST API |
-| **Số roles** | 3 (Admin, Doctor, Patient) | 5 (+ Receptionist, Cashier, Pharmacist) |
+| **Số roles** | 3 (Admin, Doctor, Patient) | 4 (Admin, Doctor, Pharmacist, Patient) |
 | **Thanh toán** | Không có | Đầy đủ: hóa đơn chi tiết, nhiều giao dịch, hoàn tiền, PDF |
 | **Đơn thuốc** | Không có | Kê đơn, xuất kho, cảnh báo tồn kho |
 | **Báo cáo** | Không có | Doanh thu, thống kê, biểu đồ |

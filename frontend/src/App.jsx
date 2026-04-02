@@ -35,6 +35,11 @@ function DashboardLayout({ title, subtitle, tabs, activeTab, onActiveTabChange, 
     if (tabs && tabs.length > 0) {
       return (
         <>
+          {user.role === "patient" && (
+            <Link to="/" className="tab-link" style={{ marginBottom: "16px", fontWeight: "bold" }}>
+              &larr; Quay lại trang chủ
+            </Link>
+          )}
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -45,11 +50,6 @@ function DashboardLayout({ title, subtitle, tabs, activeTab, onActiveTabChange, 
               {tab.label}
             </button>
           ))}
-          {user.role === "patient" && (
-            <Link to="/" className="tab-link" style={{ marginTop: "16px" }}>
-              Quay lại trang chủ
-            </Link>
-          )}
         </>
       );
     }
@@ -141,28 +141,35 @@ function PortalScreen({ role, title, subtitle, render }) {
 
   const TABS = {
     admin: [
-      { id: "nhansu", label: "Nhân sự" },
-      { id: "phongban", label: "Phòng ban" },
-      { id: "luong", label: "Lương" },
-      { id: "hopdong", label: "Hợp đồng" },
-      { id: "danhmuc", label: "Danh mục" },
-      { id: "nghiepvu", label: "Nghiệp vụ" },
+      { id: "trangdieukhien", label: "Trang điều khiển" },
+      { id: "danhsach", label: "Danh sách" },
+      { id: "quanlylich", label: "Quản lý lịch" },
       { id: "taikhoan", label: "Tài khoản" },
-      { id: "thongke", label: "Thống kê" },
+      { id: "baocao", label: "Báo cáo" },
     ],
     doctor: [
-      { id: "tongquan", label: "Tổng quan" },
-      { id: "lichkham", label: "Lịch duyệt và khám" },
+      { id: "trangdieukhien", label: "Trang điều khiển" },
+      { id: "duyetlichhen", label: "Duyệt lịch hẹn" },
+      { id: "benhnhan", label: "Bệnh nhân" },
+      { id: "danhsachbenhnhanhomnay", label: "Danh sách bệnh nhân hôm nay" },
+      { id: "khambenh", label: "Khám bệnh" },
+      { id: "kedonthuoc", label: "Kê đơn thuốc" },
+      { id: "lichsubenhnhan", label: "Lịch sử bệnh nhân" },
+      { id: "lichlamviec", label: "Lịch làm việc" },
     ],
     pharmacist: [
-      { id: "tongquan", label: "Tổng quan" },
-      { id: "khothuoc", label: "Kho thuốc" },
+      { id: "donthuoccancap", label: "Đơn thuốc cần cấp" },
+      { id: "giaothuocthanhtoan", label: "Giao thuốc & thanh toán" },
+      { id: "tonkho", label: "Tồn kho" },
+      { id: "nhapkho", label: "Nhập kho" },
       { id: "nhacungcap", label: "Nhà cung cấp" },
-      { id: "hoadon", label: "Hóa đơn" },
-      { id: "thanhtoan", label: "Thanh toán" },
+      { id: "lichsuxuatnhap", label: "Lịch sử xuất nhập" },
     ],
     patient: [
-      { id: "tongquan", label: "Tổng quan" },
+      { id: "lichhencuatoi", label: "Lịch hẹn của tôi" },
+      { id: "lichsukham", label: "Lịch sử khám" },
+      { id: "hoadon", label: "Hóa đơn" },
+      { id: "hoso", label: "Hồ sơ" },
     ],
   };
 
@@ -263,7 +270,7 @@ export default function App() {
             role="patient"
             title="Khu bệnh nhân"
             subtitle="Theo dõi lịch hẹn, phản hồi từ bác sĩ và hóa đơn của bạn."
-            render={({ loading, data, reload }) => <PatientPortal loading={loading} data={data} reload={reload} />}
+            render={({ loading, data, reload, activeTab }) => <PatientPortal loading={loading} data={data} reload={reload} activeTab={activeTab} />}
           />
         }
       />

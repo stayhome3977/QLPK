@@ -55,14 +55,18 @@ def inventory_report(db: Session = Depends(get_db), current_user=Depends(require
 
 
 @router.get("/dashboard")
-def dashboard_report(db: Session = Depends(get_db), current_user=Depends(require_role(["admin", "pharmacist", "doctor", "patient"]))):
-    today = date.today()
-    today_appointments = db.query(Appointment).filter(Appointment.appointment_date == today).count()
-    waiting = db.query(Appointment).filter(Appointment.status == AppointmentStatus.checked_in).count()
-    in_progress = db.query(Appointment).filter(Appointment.status == AppointmentStatus.in_progress).count()
+def dashboard_report(
+    target_date: date | None = Query(default=None),
+    db: Session = Depends(get_db), 
+    current_user=Depends(require_role(["admin", "pharmacist", "doctor", "patient"]))
+):
+    query_date = target_date or date.today()
+    today_appointments = db.query(Appointment).filter(Appointment.appointment_date == query_date).count()
+    waiting = db.query(Appointment).filter(Appointment.appointment_date == query_date, Appointment.status == AppointmentStatus.checked_in).count()
+    in_progress = db.query(Appointment).filter(Appointment.appointment_date == query_date, Appointment.status == AppointmentStatus.in_progress).count()
     paid_today = (
         db.query(func.coalesce(func.sum(Invoice.paid_amount), 0))
-        .filter(func.date(Invoice.created_at) == today)
+        .filter(func.date(Invoice.created_at) == query_date)
         .scalar()
         or 0
     )

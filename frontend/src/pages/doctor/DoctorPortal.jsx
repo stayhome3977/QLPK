@@ -74,7 +74,7 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
 
   return (
     <div className="dashboard-sections">
-      {activeTab === "tongquan" && (
+      {activeTab === "trangdieukhien" && (
         <Panel title="Lịch hẹn cần xử lý">
           {loading ? (
             <p>Đang tải...</p>
@@ -98,7 +98,7 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
         </Panel>
       )}
 
-      {activeTab === "lichkham" && (
+      {["duyetlichhen", "khambenh", "kedonthuoc"].includes(activeTab) && (
         <div className="dashboard-sections two-columns">
           <Panel title="Duyệt lịch và đề nghị dời lịch">
             {!selected ? (
@@ -174,6 +174,12 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
             )}
           </Panel>
         </div>
+      )}
+
+      {["benhnhan", "danhsachbenhnhanhomnay", "lichsubenhnhan", "lichlamviec"].includes(activeTab) && (
+        <Panel title="Chức năng trống">
+          <EmptyState text="Chức năng này đang được phát triển hoặc chưa có dữ liệu." />
+        </Panel>
       )}
     </div>
   );

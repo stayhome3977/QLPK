@@ -518,11 +518,20 @@ export function PharmacistPortal({ loading, data, reload, activeTab }) {
 
   return (
     <div className="dashboard-sections">
-      {activeTab === "tongquan" && <TabTongQuan loading={loading} prescriptions={prescriptions} reload={reload} />}
-      {activeTab === "khothuoc" && <TabKhoThuoc loading={loading} medicines={medicines} suppliers={suppliers} reload={reload} />}
+      {activeTab === "donthuoccancap" && <TabTongQuan loading={loading} prescriptions={prescriptions} reload={reload} />}
+      {["tonkho", "nhapkho"].includes(activeTab) && <TabKhoThuoc loading={loading} medicines={medicines} suppliers={suppliers} reload={reload} />}
       {activeTab === "nhacungcap" && <TabNhaCungCap loading={loading} suppliers={suppliers} reload={reload} />}
-      {activeTab === "hoadon" && <TabHoaDon loading={loading} invoices={invoices} completedAppts={completedAppts} reload={reload} />}
-      {activeTab === "thanhtoan" && <TabThanhToan loading={loading} invoices={invoices} reload={reload} />}
+      {activeTab === "giaothuocthanhtoan" && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <TabHoaDon loading={loading} invoices={invoices} completedAppts={completedAppts} reload={reload} />
+          <TabThanhToan loading={loading} invoices={invoices} reload={reload} />
+        </div>
+      )}
+      {activeTab === "lichsuxuatnhap" && (
+        <Panel title="Chức năng trống">
+          <EmptyState text="Chức năng này đang được phát triển hoặc chưa có dữ liệu." />
+        </Panel>
+      )}
     </div>
   );
 }

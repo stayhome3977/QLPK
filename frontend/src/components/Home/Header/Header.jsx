@@ -14,10 +14,13 @@ export function Header() {
         <Link to="/">Trang chủ</Link>
         <Link to="/booking">Đặt lịch</Link>
         <Link to="/services">Dịch vụ</Link>
-        <Link to="/patient">Lịch đã đặt</Link>
         {isAuthenticated ? (
           <>
-            {user.role !== "patient" && <Link to={roleHome(user.role)}>{ROLE_LABELS[user.role] || "Tài khoản"}</Link>}
+            {user.role === "patient" ? (
+              <Link to="/patient">Hồ sơ của tôi</Link>
+            ) : (
+              <Link to={roleHome(user.role)}>{ROLE_LABELS[user.role] || "Tài khoản"}</Link>
+            )}
             <button type="button" className="ghost-button" onClick={logout}>
               Đăng xuất
             </button>

@@ -3,7 +3,7 @@ import { api } from "../../api/http";
 import { Alert, EmptyState, Panel } from "../../components/shared/UI";
 import { currency, fmtDate, fmtTime, STATUS_LABELS, INVOICE_STATUS_LABELS } from "../../utils/helpers";
 
-export function PatientPortal({ loading, data, reload }) {
+export function PatientPortal({ loading, data, reload, activeTab }) {
   const appointments = data["/api/v1/appointments"] || [];
   const invoices = data["/api/v1/invoices"] || [];
 
@@ -14,6 +14,7 @@ export function PatientPortal({ loading, data, reload }) {
 
   return (
     <div className="dashboard-sections">
+      {(!activeTab || activeTab === "lichhencuatoi") && (
       <Panel title="Lịch hẹn của tôi">
         {loading ? (
           <p>Đang tải dữ liệu...</p>
@@ -45,7 +46,9 @@ export function PatientPortal({ loading, data, reload }) {
           </div>
         )}
       </Panel>
+      )}
 
+      {activeTab === "hoadon" && (
       <Panel title="Hóa đơn của tôi">
         {invoices.length === 0 ? (
           <EmptyState text="Chưa có hóa đơn nào." />
@@ -67,10 +70,19 @@ export function PatientPortal({ loading, data, reload }) {
           </div>
         )}
       </Panel>
+      )}
 
+      {["lichsukham", "hoso"].includes(activeTab) && (
+        <Panel title="Chức năng trống">
+          <EmptyState text="Chức năng này đang được phát triển hoặc chưa có dữ liệu." />
+        </Panel>
+      )}
+
+      {(!activeTab || activeTab === "lichhencuatoi") && (
       <Alert type="success">
         Bệnh nhân vẫn đi theo luồng public: chọn bác sĩ, chọn giờ còn trống, gửi yêu cầu và chờ bác sĩ duyệt.
       </Alert>
+      )}
     </div>
   );
 }

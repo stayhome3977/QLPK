@@ -1,0 +1,5 @@
+/api/v1/reports/dashboard: HTTP 401
+/api/v1/doctors: 200 OK
+/api/v1/medicines: HTTP 401
+/api/v1/admin/accounts: HTTP 401
+/api/v1/holidays: 200 OK

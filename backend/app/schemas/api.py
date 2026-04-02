@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 import re
@@ -317,14 +318,19 @@ class ApproveCreditPayload(BaseModel):
 class AppointmentView(ORMBase):
     id: int
     patient_id: int
+    patient_name: str | None = None
     doctor_id: int
+    doctor_name: str | None = None
     appointment_date: date
     appointment_time: time
+    duration_minutes: int | None = None
     status: str
     visit_type: str
     booking_source: str
     queue_number: int | None = None
     chief_complaint: str | None = None
+    notes: str | None = None
+    proposal: dict[str, Any] | None = None
     created_at: datetime
 
 

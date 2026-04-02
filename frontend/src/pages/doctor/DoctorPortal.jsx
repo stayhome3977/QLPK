@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/http";
 import { EmptyState, Field, Panel } from "../../components/shared/UI";
 import { fmtDate, fmtTime, STATUS_LABELS } from "../../utils/helpers";
@@ -8,6 +8,14 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
   const medicines = data["/api/v1/medicines"] || [];
   const waitingAppointments = useMemo(
     () => appointments.filter((item) => ["pending", "confirmed", "checked_in", "in_progress"].includes(item.status)),
+    [appointments],
+  );
+  const approvalAppointments = useMemo(
+    () => appointments.filter((item) => ["pending", "confirmed"].includes(item.status)),
+    [appointments],
+  );
+  const examAppointments = useMemo(
+    () => appointments.filter((item) => ["checked_in", "in_progress", "confirmed"].includes(item.status)),
     [appointments],
   );
   const [selected, setSelected] = useState(null);
@@ -20,17 +28,65 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
     setRecord({ diagnosis: "", symptoms: appointment.chief_complaint || "" });
   };
 
+  const activeList = useMemo(() => {
+    if (activeTab === "duyetlichhen") return approvalAppointments;
+    if (["khambenh", "kedonthuoc"].includes(activeTab)) return examAppointments;
+    return waitingAppointments;
+  }, [activeTab, approvalAppointments, examAppointments, waitingAppointments]);
+
+  useEffect(() => {
+    if (activeList.length === 0) {
+      setSelected(null);
+      return;
+    }
+    if (!selected || !activeList.some((item) => item.id === selected.id)) {
+      setSelected(activeList[0]);
+    }
+  }, [activeList, selected]);
+
   const approve = async () => {
     await api.patch(`/api/v1/appointments/${selected.id}/approve`, {});
     await reload();
   };
 
   const sendProposal = async () => {
-    await api.patch(`/api/v1/appointments/${selected.id}/propose-reschedule`, {
-      ...proposal,
-      discount_percent: Number(proposal.discount_percent || 0),
-    });
-    await reload();
+    const note = proposal.note.trim();
+    const discountPercent = Number(proposal.discount_percent || 0);
+    if (!proposal.proposed_date || !proposal.proposed_time) {
+      alert("Vui lòng chọn ngày và giờ đề nghị mới.");
+      return;
+    }
+    if (note.length < 5) {
+      alert("Ghi chú cho bệnh nhân cần ít nhất 5 ký tự.");
+      return;
+    }
+    if (Number.isNaN(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+      alert("Ưu đãi phải nằm trong khoảng từ 0 đến 100.");
+      return;
+    }
+
+    try {
+      await api.patch(`/api/v1/appointments/${selected.id}/propose-reschedule`, {
+        proposed_date: proposal.proposed_date,
+        proposed_time: proposal.proposed_time,
+        note,
+        discount_percent: discountPercent,
+        discount_note: proposal.discount_note.trim() || null,
+      });
+      await reload();
+      alert("Đã gửi đề nghị đổi lịch.");
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      if (typeof detail === "string") {
+        alert(detail);
+        return;
+      }
+      if (Array.isArray(detail) && detail.length > 0) {
+        alert(detail[0]?.msg || "Không thể gửi đề nghị đổi lịch.");
+        return;
+      }
+      alert("Không thể gửi đề nghị đổi lịch.");
+    }
   };
 
   const start = async () => {
@@ -98,11 +154,33 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
         </Panel>
       )}
 
-      {["duyetlichhen", "khambenh", "kedonthuoc"].includes(activeTab) && (
+      {activeTab === "duyetlichhen" && (
         <div className="dashboard-sections two-columns">
+          <Panel title="Danh sách lịch cần duyệt">
+            {loading ? (
+              <p>Đang tải...</p>
+            ) : approvalAppointments.length === 0 ? (
+              <EmptyState text="Không có lịch cần duyệt." />
+            ) : (
+              <div className="list-stack">
+                {approvalAppointments.map((appointment) => (
+                  <button key={appointment.id} className={`list-row selectable ${selected?.id === appointment.id ? "active" : ""}`} onClick={() => chooseAppointment(appointment)}>
+                    <div>
+                      <strong>{appointment.patient_name}</strong>
+                      <p>
+                        {fmtDate(appointment.appointment_date)} lúc {fmtTime(appointment.appointment_time)}
+                      </p>
+                    </div>
+                    <span>{STATUS_LABELS[appointment.status]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+
           <Panel title="Duyệt lịch và đề nghị dời lịch">
             {!selected ? (
-              <EmptyState text="Chưa chọn lịch hẹn từ Tổng quan." />
+              <EmptyState text="Chọn lịch hẹn ở danh sách bên trái." />
             ) : (
               <div className="form-stack">
                 <p>
@@ -112,8 +190,6 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
                   <button className="primary-button" onClick={approve}>
                     Chốt lịch
                   </button>
-                  {selected.status === "checked_in" ? <button className="secondary-link button-link" onClick={start}>Bắt đầu khám</button> : null}
-                  {selected.status === "in_progress" ? <button className="secondary-link button-link" onClick={complete}>Hoàn tất khám</button> : null}
                 </div>
                 <div className="form-columns">
                   <Field label="Ngày đề nghị mới">
@@ -140,12 +216,53 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
               </div>
             )}
           </Panel>
+        </div>
+      )}
+
+      {["khambenh", "kedonthuoc"].includes(activeTab) && (
+        <div className="dashboard-sections two-columns">
+          <Panel title="Danh sách bệnh nhân chờ khám">
+            {loading ? (
+              <p>Đang tải...</p>
+            ) : examAppointments.length === 0 ? (
+              <EmptyState text="Không có bệnh nhân cần khám." />
+            ) : (
+              <div className="list-stack">
+                {examAppointments.map((appointment) => (
+                  <button key={appointment.id} className={`list-row selectable ${selected?.id === appointment.id ? "active" : ""}`} onClick={() => chooseAppointment(appointment)}>
+                    <div>
+                      <strong>{appointment.patient_name}</strong>
+                      <p>
+                        {fmtDate(appointment.appointment_date)} lúc {fmtTime(appointment.appointment_time)}
+                      </p>
+                    </div>
+                    <span>{STATUS_LABELS[appointment.status]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
 
           <Panel title="Khám bệnh và kê đơn">
             {!selected ? (
-              <EmptyState text="Chưa chọn lịch hẹn từ Tổng quan." />
+              <EmptyState text="Chọn bệnh nhân ở danh sách bên trái." />
             ) : (
               <div className="form-stack">
+                <p>
+                  <strong>{selected.patient_name}</strong> - {selected.chief_complaint}
+                </p>
+                <div className="row-actions">
+                  {selected.status === "confirmed" || selected.status === "checked_in" ? (
+                    <button className="secondary-link button-link" onClick={start}>
+                      Bắt đầu khám
+                    </button>
+                  ) : null}
+                  {selected.status === "in_progress" ? (
+                    <button className="secondary-link button-link" onClick={complete}>
+                      Hoàn tất khám
+                    </button>
+                  ) : null}
+                </div>
                 <Field label="Triệu chứng">
                   <textarea value={record.symptoms} onChange={(e) => setRecord((p) => ({ ...p, symptoms: e.target.value }))} />
                 </Field>

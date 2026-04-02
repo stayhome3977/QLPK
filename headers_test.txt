@@ -1,0 +1,10 @@
+date: Thu, 02 Apr 2026 12:34:01 GMT
+server: uvicorn
+www-authenticate: Bearer
+content-length: 30
+content-type: application/json
+access-control-allow-credentials: true
+access-control-allow-origin: http://localhost:5173
+vary: Origin
+connection: close
+

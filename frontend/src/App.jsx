@@ -167,6 +167,7 @@ function PortalScreen({ role, title, subtitle, render }) {
     ],
     patient: [
       { id: "lichhencuatoi", label: "Lịch hẹn của tôi" },
+      { id: "denghidichuyenlich", label: "Đề nghị dời lịch" },
       { id: "lichsukham", label: "Lịch sử khám" },
       { id: "hoadon", label: "Hóa đơn" },
       { id: "hoso", label: "Hồ sơ" },

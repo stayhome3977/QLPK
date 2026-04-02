@@ -1,7 +1,7 @@
 ﻿-- ============================================================
 -- QLPK - Quan ly phong kham da lieu
 -- MySQL 8.0+
--- Ban luoc do da duoc Viet hoa theo kieu khong dau
+-- FILE HOÀN CHỈNH: TẠO BẢNG + DỮ LIỆU MẪU ĐẦY ĐỦ (đã sửa lỗi FK)
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS phong_kham_da_lieu
@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS phong_kham_da_lieu
 USE phong_kham_da_lieu;
 
 -- ============================================================
--- 1. tai_khoan - Tai khoan he thong
+-- 1. TẠO TẤT CẢ CÁC BẢNG (giữ nguyên file gốc của bạn)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS tai_khoan (
     ma_tai_khoan            INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -40,9 +40,6 @@ CREATE TABLE IF NOT EXISTS tai_khoan (
         FOREIGN KEY (dat_lai_mat_khau_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 2. benh_nhan - Ho so benh nhan
--- ============================================================
 CREATE TABLE IF NOT EXISTS benh_nhan (
     ma_benh_nhan                INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_tai_khoan                INT UNSIGNED NOT NULL,
@@ -67,9 +64,6 @@ CREATE TABLE IF NOT EXISTS benh_nhan (
         FOREIGN KEY (ma_tai_khoan) REFERENCES tai_khoan(ma_tai_khoan) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 3. bac_si - Thong tin bac si
--- ============================================================
 CREATE TABLE IF NOT EXISTS bac_si (
     ma_bac_si                   INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_tai_khoan                INT UNSIGNED NOT NULL,
@@ -88,9 +82,6 @@ CREATE TABLE IF NOT EXISTS bac_si (
         FOREIGN KEY (ma_tai_khoan) REFERENCES tai_khoan(ma_tai_khoan) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 4. lich_lam_viec_bac_si - Lich lam viec do quan tri quan ly
--- ============================================================
 CREATE TABLE IF NOT EXISTS lich_lam_viec_bac_si (
     ma_lich_lam_viec            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_bac_si                   INT UNSIGNED NOT NULL,
@@ -111,9 +102,6 @@ CREATE TABLE IF NOT EXISTS lich_lam_viec_bac_si (
         FOREIGN KEY (quan_ly_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 5. khoang_ban_bac_si - Khoang gio mau vang do quan tri danh dau
--- ============================================================
 CREATE TABLE IF NOT EXISTS khoang_ban_bac_si (
     ma_khoang_ban               INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_bac_si                   INT UNSIGNED NOT NULL,
@@ -131,9 +119,6 @@ CREATE TABLE IF NOT EXISTS khoang_ban_bac_si (
         FOREIGN KEY (tao_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 6. ngay_nghi_bac_si - Ngay nghi bac si do quan tri quan ly
--- ============================================================
 CREATE TABLE IF NOT EXISTS ngay_nghi_bac_si (
     ma_ngay_nghi                INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_bac_si                   INT UNSIGNED NOT NULL,
@@ -149,9 +134,6 @@ CREATE TABLE IF NOT EXISTS ngay_nghi_bac_si (
         FOREIGN KEY (tao_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 7. ngay_nghi_phong_kham - Ngay nghi toan phong kham
--- ============================================================
 CREATE TABLE IF NOT EXISTS ngay_nghi_phong_kham (
     ma_ngay_nghi_phong          INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ngay_nghi                   DATE NOT NULL,
@@ -161,9 +143,6 @@ CREATE TABLE IF NOT EXISTS ngay_nghi_phong_kham (
     UNIQUE KEY uq_ngay_nghi_phong_kham (ngay_nghi)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 8. dich_vu - Danh muc dich vu
--- ============================================================
 CREATE TABLE IF NOT EXISTS dich_vu (
     ma_dich_vu                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ten_dich_vu                 VARCHAR(200) NOT NULL,
@@ -177,9 +156,6 @@ CREATE TABLE IF NOT EXISTS dich_vu (
     PRIMARY KEY (ma_dich_vu)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 9. lich_hen - Lich hen kham
--- ============================================================
 CREATE TABLE IF NOT EXISTS lich_hen (
     ma_lich_hen                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_benh_nhan                INT UNSIGNED NOT NULL,
@@ -233,9 +209,6 @@ CREATE TABLE IF NOT EXISTS lich_hen (
         FOREIGN KEY (tai_kham_tu_lich_hen) REFERENCES lich_hen(ma_lich_hen)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 10. dich_vu_lich_hen - Dich vu phat sinh trong buoi kham
--- ============================================================
 CREATE TABLE IF NOT EXISTS dich_vu_lich_hen (
     ma_dich_vu_lich_hen         INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_lich_hen                 INT UNSIGNED NOT NULL,
@@ -255,9 +228,6 @@ CREATE TABLE IF NOT EXISTS dich_vu_lich_hen (
         FOREIGN KEY (them_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 11. ho_so_benh_an - Ho so benh an
--- ============================================================
 CREATE TABLE IF NOT EXISTS ho_so_benh_an (
     ma_ho_so_benh_an            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_lich_hen                 INT UNSIGNED NOT NULL,
@@ -284,9 +254,6 @@ CREATE TABLE IF NOT EXISTS ho_so_benh_an (
         FOREIGN KEY (ma_bac_si) REFERENCES bac_si(ma_bac_si)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 12. nha_cung_cap - Danh sach nha cung cap thuoc
--- ============================================================
 CREATE TABLE IF NOT EXISTS nha_cung_cap (
     ma_nha_cung_cap             INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ten_nha_cung_cap            VARCHAR(200) NOT NULL,
@@ -303,9 +270,6 @@ CREATE TABLE IF NOT EXISTS nha_cung_cap (
     UNIQUE KEY uq_nha_cung_cap_ten (ten_nha_cung_cap)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 13. thuoc - Danh muc thuoc
--- ============================================================
 CREATE TABLE IF NOT EXISTS thuoc (
     ma_thuoc                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ten_thuoc                   VARCHAR(200) NOT NULL,
@@ -327,9 +291,6 @@ CREATE TABLE IF NOT EXISTS thuoc (
     INDEX idx_thuoc_ton_kho (ton_kho_hien_tai)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 14. lo_thuoc - Lo nhap thuoc
--- ============================================================
 CREATE TABLE IF NOT EXISTS lo_thuoc (
     ma_lo_thuoc                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_thuoc                    INT UNSIGNED NOT NULL,
@@ -352,9 +313,6 @@ CREATE TABLE IF NOT EXISTS lo_thuoc (
         FOREIGN KEY (ma_nha_cung_cap) REFERENCES nha_cung_cap(ma_nha_cung_cap)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 15. don_thuoc - Don thuoc bac si gui sang duoc si
--- ============================================================
 CREATE TABLE IF NOT EXISTS don_thuoc (
     ma_don_thuoc                INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_ho_so_benh_an            INT UNSIGNED NOT NULL,
@@ -383,9 +341,6 @@ CREATE TABLE IF NOT EXISTS don_thuoc (
         FOREIGN KEY (giao_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 16. chi_tiet_don_thuoc - Tung dong thuoc trong don
--- ============================================================
 CREATE TABLE IF NOT EXISTS chi_tiet_don_thuoc (
     ma_chi_tiet_don_thuoc       INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_don_thuoc                INT UNSIGNED NOT NULL,
@@ -405,9 +360,6 @@ CREATE TABLE IF NOT EXISTS chi_tiet_don_thuoc (
         FOREIGN KEY (ma_thuoc) REFERENCES thuoc(ma_thuoc)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 17. phan_bo_lo_don_thuoc - Phan bo lo cho tung dong don thuoc
--- ============================================================
 CREATE TABLE IF NOT EXISTS phan_bo_lo_don_thuoc (
     ma_phan_bo                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_chi_tiet_don_thuoc       INT UNSIGNED NOT NULL,
@@ -423,9 +375,6 @@ CREATE TABLE IF NOT EXISTS phan_bo_lo_don_thuoc (
         FOREIGN KEY (ma_lo_thuoc) REFERENCES lo_thuoc(ma_lo_thuoc)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 18. hoa_don - Hoa don do duoc si lap va thu tien
--- ============================================================
 CREATE TABLE IF NOT EXISTS hoa_don (
     ma_hoa_don                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_lich_hen                 INT UNSIGNED NOT NULL,
@@ -461,9 +410,6 @@ CREATE TABLE IF NOT EXISTS hoa_don (
         FOREIGN KEY (duyet_giam_gia_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 19. chi_tiet_hoa_don - Tung dong chi phi
--- ============================================================
 CREATE TABLE IF NOT EXISTS chi_tiet_hoa_don (
     ma_chi_tiet_hoa_don         INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_hoa_don                  INT UNSIGNED NOT NULL,
@@ -480,9 +426,6 @@ CREATE TABLE IF NOT EXISTS chi_tiet_hoa_don (
         FOREIGN KEY (ma_hoa_don) REFERENCES hoa_don(ma_hoa_don) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 20. giao_dich_thanh_toan - Lich su thu tien hoan tien
--- ============================================================
 CREATE TABLE IF NOT EXISTS giao_dich_thanh_toan (
     ma_giao_dich                INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_hoa_don                  INT UNSIGNED NOT NULL,
@@ -506,9 +449,6 @@ CREATE TABLE IF NOT EXISTS giao_dich_thanh_toan (
         FOREIGN KEY (duyet_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 21. nhat_ky_kho - Lich su nhap xuat dieu chinh kho
--- ============================================================
 CREATE TABLE IF NOT EXISTS nhat_ky_kho (
     ma_nhat_ky_kho              INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_thuoc                    INT UNSIGNED NOT NULL,
@@ -531,9 +471,6 @@ CREATE TABLE IF NOT EXISTS nhat_ky_kho (
         FOREIGN KEY (ma_tai_khoan) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 22. thong_bao - Thong bao he thong
--- ============================================================
 CREATE TABLE IF NOT EXISTS thong_bao (
     ma_thong_bao                INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_tai_khoan                INT UNSIGNED NOT NULL,
@@ -552,48 +489,86 @@ CREATE TABLE IF NOT EXISTS thong_bao (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- DU LIEU MAU
+-- DỮ LIỆU MẪU (gốc + bổ sung đã sửa)
 -- ============================================================
 
-INSERT IGNORE INTO tai_khoan (
-    ma_tai_khoan, email, mat_khau, vai_tro, ho_ten, so_dien_thoai,
-    dang_hoat_dong, email_xac_thuc_luc, tao_luc
-) VALUES (
-    1,
-    'admin@qlpk.vn',
-    '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW',
-    'quan_tri',
-    'Quan tri vien',
-    '0900000000',
-    1,
-    NOW(),
-    NOW()
-);
+-- Tài khoản gốc (admin)
+INSERT IGNORE INTO tai_khoan (ma_tai_khoan, email, mat_khau, vai_tro, ho_ten, so_dien_thoai, dang_hoat_dong, email_xac_thuc_luc, tao_luc) VALUES
+(1, 'admin@qlpk.vn', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'quan_tri', 'Quan tri vien', '0900000000', 1, NOW(), NOW());
 
+-- Tài khoản bổ sung
+INSERT IGNORE INTO tai_khoan (ma_tai_khoan, email, mat_khau, vai_tro, ho_ten, so_dien_thoai, dang_hoat_dong, email_xac_thuc_luc, tao_luc) VALUES
+(2, 'bacsi.dalieu@qlpk.vn', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'bac_si', 'Nguyễn Văn A', '0912345678', 1, NOW(), NOW()),
+(3, 'duocsi1@qlpk.vn', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'duoc_si', 'Trần Thị B', '0987654321', 1, NOW(), NOW()),
+(4, 'benhnhan1@qlpk.vn', '$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'benh_nhan', 'Lê Thị C', '0901234567', 1, NOW(), NOW());
+
+-- Ngày nghỉ phòng khám (gốc)
 INSERT IGNORE INTO ngay_nghi_phong_kham (ngay_nghi, ten_ngay_nghi) VALUES
-    ('2026-01-01', 'Tet Duong lich'),
-    ('2026-02-19', 'Tet Nguyen Dan mung 1'),
-    ('2026-02-20', 'Tet Nguyen Dan mung 2'),
-    ('2026-02-21', 'Tet Nguyen Dan mung 3'),
-    ('2026-04-30', 'Ngay Giai phong mien Nam'),
-    ('2026-05-01', 'Ngay Quoc te Lao dong'),
-    ('2026-09-02', 'Ngay Quoc khanh');
+('2026-01-01', 'Tet Duong lich'),
+('2026-02-19', 'Tet Nguyen Dan mung 1'),
+('2026-02-20', 'Tet Nguyen Dan mung 2'),
+('2026-02-21', 'Tet Nguyen Dan mung 3'),
+('2026-04-30', 'Ngay Giai phong mien Nam'),
+('2026-05-01', 'Ngay Quoc te Lao dong'),
+('2026-09-02', 'Ngay Quoc khanh');
 
+-- Dịch vụ (gốc)
 INSERT IGNORE INTO dich_vu (ten_dich_vu, nhom_dich_vu, gia_dich_vu, thoi_luong_phut, mo_ta) VALUES
-    ('Kham da lieu tong quat', 'Kham tong quat', 200000, 30, 'Kham va tu van cac van de da lieu'),
-    ('Dieu tri mun trung ca', 'Dieu tri mun', 350000, 45, 'Dieu tri mun chuyen sau'),
-    ('Laser tri nam tan nhang', 'Laser tham my', 800000, 60, 'Dieu tri nam va tan nhang bang laser'),
-    ('Cham soc da co ban', 'Cham soc da', 250000, 60, 'Lam sach sau va duong am da'),
-    ('Dieu tri viem da co dia', 'Dieu tri benh da', 300000, 30, 'Theo doi va dieu tri viem da co dia');
+('Kham da lieu tong quat', 'Kham tong quat', 200000, 30, 'Kham va tu van cac van de da lieu'),
+('Dieu tri mun trung ca', 'Dieu tri mun', 350000, 45, 'Dieu tri mun chuyen sau'),
+('Laser tri nam tan nhang', 'Laser tham my', 800000, 60, 'Dieu tri nam va tan nhang bang laser'),
+('Cham soc da co ban', 'Cham soc da', 250000, 60, 'Lam sach sau va duong am da'),
+('Dieu tri viem da co dia', 'Dieu tri benh da', 300000, 30, 'Theo doi va dieu tri viem da co dia');
 
-INSERT IGNORE INTO nha_cung_cap (
-    ten_nha_cung_cap, nguoi_lien_he, so_dien_thoai, email, dia_chi
-) VALUES (
-    'Cong ty duoc pham mau',
-    'Nguyen Van A',
-    '0911222333',
-    'nhacungcap@example.com',
-    'TP.HCM'
-);
+-- Nhà cung cấp (gốc)
+INSERT IGNORE INTO nha_cung_cap (ten_nha_cung_cap, nguoi_lien_he, so_dien_thoai, email, dia_chi)
+VALUES ('Cong ty duoc pham mau', 'Nguyen Van A', '0911222333', 'nhacungcap@example.com', 'TP.HCM');
 
+-- ============================================================
+-- DỮ LIỆU MẪU BỔ SUNG (đã sắp xếp đúng thứ tự FK)
+-- ============================================================
 
+INSERT IGNORE INTO benh_nhan (ma_benh_nhan, ma_tai_khoan, ma_benh_nhan_he_thong, nguon_tao, ngay_sinh, gioi_tinh, dia_chi, so_bhyt, nghe_nghiep)
+VALUES (1, 4, 'BN-0001', 'tu_dang_ky', '1995-05-10', 'nu', 'Số 12 Nguyễn Trãi, Hà Nội', '012345678901', 'Nhân viên văn phòng');
+
+INSERT IGNORE INTO bac_si (ma_bac_si, ma_tai_khoan, chuyen_khoa, so_chung_chi_hanh_nghe, bang_cap, so_nam_kinh_nghiem, phi_kham, gioi_thieu, dang_nhan_kham)
+VALUES (1, 2, 'Da liễu', 'BSCK1-987654', 'Thạc sĩ Da liễu', 12, 250000, 'Chuyên gia da liễu với 12 năm kinh nghiệm điều trị mụn, nám, viêm da.', 1);
+
+INSERT IGNORE INTO lich_lam_viec_bac_si (ma_lich_lam_viec, ma_bac_si, thu_trong_tuan, gio_bat_dau, gio_ket_thuc, thoi_luong_moi_ca_phut, so_benh_nhan_toi_da, quan_ly_boi)
+VALUES
+(1, 1, 1, '08:00:00', '12:00:00', 30, 15, 1),
+(2, 1, 2, '13:00:00', '17:00:00', 30, 15, 1);
+
+INSERT IGNORE INTO thuoc (ma_thuoc, ten_thuoc, ten_hoat_chat, nhom_thuoc, don_vi_tinh, gia_ban_don_vi, ton_kho_hien_tai, muc_canh_bao_ton_kho, hang_san_xuat, dang_ap_dung)
+VALUES
+(1, 'Acnes Treatment Gel', 'Benzoyl Peroxide 5%', 'Thuốc trị mụn', 'Tuýp 10g', 120000, 150, 30, 'GSK', 1),
+(2, 'Kem dưỡng ẩm Cetaphil', '', 'Chăm sóc da', 'Chai 500ml', 250000, 80, 20, 'Galderma', 1),
+(3, 'Isotretinoin 10mg', 'Isotretinoin', 'Thuốc trị mụn nặng', 'Viên', 500000, 50, 10, 'Roche', 1);
+
+INSERT IGNORE INTO lo_thuoc (ma_lo_thuoc, ma_thuoc, ma_nha_cung_cap, so_lo, han_su_dung, so_luong_nhap, so_luong_con_lai, gia_nhap_don_vi, dang_ap_dung)
+VALUES
+(1, 1, 1, 'LOT-ACN-202601', '2027-06-30', 300, 150, 80000, 1),
+(2, 2, 1, 'LOT-CET-202601', '2027-12-31', 200, 80, 200000, 1),
+(3, 3, 1, 'LOT-ISO-202601', '2028-01-15', 100, 50, 400000, 1);
+
+INSERT IGNORE INTO lich_hen (ma_lich_hen, ma_benh_nhan, ma_bac_si, ma_dich_vu_chinh, loai_luot_kham, nguon_dat, ngay_kham, gio_kham, thoi_luong_phut, trang_thai, ly_do_kham, da_den_luc, bat_dau_kham_luc, hoan_tat_luc)
+VALUES (1, 1, 1, 1, 'dat_truoc', 'ung_dung_benh_nhan', '2026-04-10', '09:00:00', 30, 'hoan_tat', 'Kham mụn viêm và tư vấn da', '2026-04-10 08:55:00', '2026-04-10 09:00:00', '2026-04-10 09:45:00');
+
+INSERT IGNORE INTO ho_so_benh_an (ma_ho_so_benh_an, ma_lich_hen, ma_benh_nhan, ma_bac_si, trieu_chung, ket_qua_tham_kham, chan_doan, ma_icd10, phac_do_dieu_tri, ngay_tai_kham)
+VALUES (1, 1, 1, 1, 'Mụn viêm đỏ nhiều ở má và cằm, có sẹo lõm nhẹ', 'Thăm khám da mặt, kiểm tra viêm nang lông', 'Mụn trứng cá mức độ trung bình (Acne vulgaris)', 'L70', 'Kê đơn thuốc bôi + uống, hướng dẫn chăm sóc da tại nhà', '2026-05-08');
+
+INSERT IGNORE INTO don_thuoc (ma_don_thuoc, ma_ho_so_benh_an, ma_bac_si, ma_benh_nhan, trang_thai, chuan_bi_boi, chuan_bi_luc, giao_boi, giao_luc, ghi_chu)
+VALUES (1, 1, 1, 1, 'da_giao', 3, NOW(), 3, NOW(), 'Đơn thuốc điều trị mụn 30 ngày');
+
+INSERT IGNORE INTO chi_tiet_don_thuoc (ma_chi_tiet_don_thuoc, ma_don_thuoc, ma_thuoc, so_luong_ke, lieu_dung, tan_suat, so_ngay_dung, huong_dan_su_dung, don_gia)
+VALUES
+(1, 1, 1, 1, 'Bôi mỏng', '2 lần/ngày (sáng-tối)', 30, 'Bôi sau khi rửa mặt sạch', 120000),
+(2, 1, 3, 2, 'Uống sau ăn', '1 viên/ngày (buổi tối)', 30, 'Uống sau bữa tối, tránh nắng', 500000);
+
+INSERT IGNORE INTO phan_bo_lo_don_thuoc (ma_phan_bo, ma_chi_tiet_don_thuoc, ma_lo_thuoc, so_luong_giao)
+VALUES (1, 1, 1, 1), (2, 2, 3, 2);
+
+INSERT IGNORE INTO thong_bao (ma_thong_bao, ma_tai_khoan, tieu_de, noi_dung, loai_thong_bao, duong_dan_hanh_dong)
+VALUES (1, 4, 'Lịch hẹn ngày 10/04/2026 đã hoàn tất', 'Buổi khám của bạn đã xong. Vui lòng kiểm tra hồ sơ bệnh án và đơn thuốc.', 'lich_hen', '/benh-nhan/ho-so-benh-an/1');
+
+-- ============================================================

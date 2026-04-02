@@ -5,6 +5,26 @@ import { useAuth } from "../../auth";
 import { Alert, Field } from "../../components/shared/UI";
 import { currency, ROLE_LABELS, SLOT_STATUS } from "../../utils/helpers";
 
+function getErrorMessage(err, fallback) {
+  const detail = err?.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item?.msg) return item.msg;
+        return JSON.stringify(item);
+      })
+      .join("; ");
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return fallback;
+  }
+}
+
 function useLoad(path, initialValue = []) {
   const [data, setData] = useState(initialValue);
   useEffect(() => {
@@ -38,7 +58,7 @@ export function LoginPage() {
       const user = await login(loginForm.email, loginForm.password);
       navigate(location.state?.redirectTo || (user.role === "patient" ? "/patient" : `/${user.role}`), { replace: true });
     } catch (err) {
-      setError(err.response?.data?.detail || "Đăng nhập thất bại");
+      setError(getErrorMessage(err, "Đăng nhập thất bại"));
     } finally {
       setLoading(false);
     }
@@ -53,7 +73,7 @@ export function LoginPage() {
       await login(registerForm.email, registerForm.password);
       navigate("/patient", { replace: true });
     } catch (err) {
-      setError(err.response?.data?.detail || "Đăng ký thất bại");
+      setError(getErrorMessage(err, "Đăng ký thất bại"));
     } finally {
       setLoading(false);
     }
@@ -251,7 +271,7 @@ export function BookingPage() {
       });
       navigate("/patient");
     } catch (err) {
-      setError(err.response?.data?.detail || "Không thể tạo lịch hẹn");
+      setError(getErrorMessage(err, "Không thể tạo lịch hẹn"));
     }
   };
 

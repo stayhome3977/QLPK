@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.security import create_access_token, create_refresh_token, decode_token, get_password_hash, verify_password
-from app.models.entities import Patient, PatientSource, RoleEnum, User
+from app.models.entities import GenderEnum, Patient, PatientSource, RoleEnum, User
 from app.schemas.api import LoginRequest, MessageResponse, RegisterRequest, TokenResponse
 from app.seed import next_patient_code
 
@@ -21,6 +21,12 @@ def serialize_user(user: User) -> dict:
         "full_name": user.full_name,
         "phone": user.phone,
     }
+
+
+def map_gender(value: str | None):
+    if not value:
+        return None
+    return GenderEnum(value) if value in GenderEnum._value2member_map_ else None
 
 
 @router.post("/register", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
@@ -46,7 +52,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
             patient_code=next_patient_code(db),
             created_source=PatientSource.self_register,
             date_of_birth=payload.date_of_birth,
-            gender=payload.gender,
+            gender=map_gender(payload.gender),
             address=payload.address,
         )
     )

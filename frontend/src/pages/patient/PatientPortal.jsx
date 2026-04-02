@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useState } from "react";
 import { api } from "../../api/http";
 import { Alert, EmptyState, Panel } from "../../components/shared/UI";
 import { currency, fmtDate, fmtTime, STATUS_LABELS, INVOICE_STATUS_LABELS } from "../../utils/helpers";
@@ -6,10 +7,29 @@ import { currency, fmtDate, fmtTime, STATUS_LABELS, INVOICE_STATUS_LABELS } from
 export function PatientPortal({ loading, data, reload, activeTab }) {
   const appointments = data["/api/v1/appointments"] || [];
   const invoices = data["/api/v1/invoices"] || [];
+  const [submittingProposalId, setSubmittingProposalId] = useState(null);
+  const rescheduleProposals = appointments.filter(
+    (appointment) => appointment.proposal && appointment.status === "pending"
+  );
 
   const cancelAppointment = async (id) => {
     await api.delete(`/api/v1/appointments/${id}`);
     await reload();
+  };
+
+  const confirmRescheduleProposal = async (appointment) => {
+    if (!appointment?.proposal) return;
+    setSubmittingProposalId(appointment.id);
+    try {
+      await api.patch(`/api/v1/appointments/${appointment.id}/reschedule`, {
+        appointment_date: appointment.proposal.proposed_date,
+        appointment_time: appointment.proposal.proposed_time,
+        reason: "Bệnh nhân đã chốt lịch mới từ đề nghị dời lịch của bác sĩ.",
+      });
+      await reload();
+    } finally {
+      setSubmittingProposalId(null);
+    }
   };
 
   return (
@@ -40,6 +60,48 @@ export function PatientPortal({ loading, data, reload, activeTab }) {
                       Hủy lịch
                     </button>
                   ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+      )}
+
+      {activeTab === "denghidichuyenlich" && (
+      <Panel title="Đề nghị dời lịch từ bác sĩ">
+        {loading ? (
+          <p>Đang tải dữ liệu...</p>
+        ) : rescheduleProposals.length === 0 ? (
+          <EmptyState text="Chưa có đề nghị dời lịch nào từ bác sĩ." />
+        ) : (
+          <div className="list-stack">
+            {rescheduleProposals.map((appointment) => (
+              <div key={appointment.id} className="list-row">
+                <div>
+                  <strong>{appointment.doctor_name}</strong>
+                  <p>
+                    Lịch cũ: {fmtDate(appointment.appointment_date)} lúc {fmtTime(appointment.appointment_time)}
+                  </p>
+                  <p>
+                    Đề nghị mới: {fmtDate(appointment.proposal.proposed_date)} lúc {fmtTime(appointment.proposal.proposed_time)}
+                  </p>
+                  <p>Ghi chú: {appointment.proposal.note}</p>
+                  {appointment.proposal.discount_percent > 0 ? (
+                    <p>
+                      Ưu đãi: {appointment.proposal.discount_percent}%
+                      {appointment.proposal.discount_note ? ` - ${appointment.proposal.discount_note}` : ""}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="row-actions">
+                  <button
+                    className="primary-button"
+                    disabled={submittingProposalId === appointment.id}
+                    onClick={() => confirmRescheduleProposal(appointment)}
+                  >
+                    {submittingProposalId === appointment.id ? "Đang chốt..." : "Chốt lịch"}
+                  </button>
                 </div>
               </div>
             ))}

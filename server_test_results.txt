@@ -1,0 +1,2 @@
+/api/v1/reports/dashboard 500: Internal Server Error
+/api/v1/admin/accounts 200 OK

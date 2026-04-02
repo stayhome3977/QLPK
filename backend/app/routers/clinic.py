@@ -3,7 +3,7 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from reportlab.pdfgen import canvas
-from sqlalchemy import func, text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -11,12 +11,12 @@ from app.core.dependencies import get_current_user, require_role
 from app.core.security import get_password_hash
 from app.models.entities import (
     Appointment,
-    AppointmentProposal,
     AppointmentService,
     AppointmentStatus,
     BookingSource,
     ClinicHoliday,
     Doctor,
+    DoctorBusySlot,
     DoctorLeave,
     DoctorSchedule,
     GenderEnum,
@@ -197,7 +197,6 @@ def serialize_appointment(db: Session, appointment: Appointment) -> dict:
     doctor = get_doctor_or_404(db, appointment.doctor_id)
     doctor_user = db.query(User).filter(User.id == doctor.user_id).first()
     patient_user = db.query(User).filter(User.id == patient.user_id).first() if patient.user_id else None
-    proposal = db.query(AppointmentProposal).filter(AppointmentProposal.appointment_id == appointment.id).first()
     return {
         "id": appointment.id,
         "patient_id": appointment.patient_id,
@@ -215,13 +214,13 @@ def serialize_appointment(db: Session, appointment: Appointment) -> dict:
         "notes": appointment.notes,
         "proposal": (
             {
-                "proposed_date": proposal.proposed_date,
-                "proposed_time": proposal.proposed_time,
-                "note": proposal.note,
-                "discount_percent": float(proposal.discount_percent),
-                "discount_note": proposal.discount_note,
+                "proposed_date": appointment.proposed_date,
+                "proposed_time": appointment.proposed_time,
+                "note": appointment.notes,
+                "discount_percent": float(appointment.discount_percent or 0),
+                "discount_note": appointment.discount_note,
             }
-            if proposal
+            if appointment.proposed_date and appointment.proposed_time
             else None
         ),
         "created_at": appointment.created_at,
@@ -238,36 +237,11 @@ def map_gender(value: str | None):
     return GenderEnum(value) if value in GenderEnum._value2member_map_ else None
 
 
-def ensure_doctor_busy_slots_table(db: Session) -> None:
-    try:
-        db.execute(
-            text(
-                """
-            CREATE TABLE IF NOT EXISTS doctor_busy_slots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                doctor_id INTEGER NOT NULL,
-                busy_date DATE NOT NULL,
-                start_time TIME NOT NULL,
-                end_time TIME NOT NULL,
-                reason TEXT,
-                created_by INTEGER NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-            )
-        )
-        db.commit()
-    except Exception:  # noqa: BLE001
-        db.rollback()
-
-
 def get_available_slots_logic(db: Session, doctor_id: int, selected_date: date) -> list[dict]:
     holiday = db.query(ClinicHoliday).filter(ClinicHoliday.holiday_date == selected_date, ClinicHoliday.is_active.is_(True)).first()
     leave = db.query(DoctorLeave).filter(DoctorLeave.doctor_id == doctor_id, DoctorLeave.leave_date == selected_date).first()
     if holiday or leave:
         return []
-
-    ensure_doctor_busy_slots_table(db)
 
     weekday = (selected_date.weekday() + 1) % 7
     schedules = (
@@ -289,10 +263,11 @@ def get_available_slots_logic(db: Session, doctor_id: int, selected_date: date) 
         key = item.appointment_time.strftime("%H:%M")
         counts[key] = counts.get(key, 0) + 1
 
-    busy_rows = db.execute(
-        text("SELECT start_time, end_time, reason FROM doctor_busy_slots WHERE doctor_id = :doctor_id AND busy_date = :busy_date"),
-        {"doctor_id": doctor_id, "busy_date": selected_date.isoformat()},
-    ).fetchall()
+    busy_rows = (
+        db.query(DoctorBusySlot)
+        .filter(DoctorBusySlot.doctor_id == doctor_id, DoctorBusySlot.busy_date == selected_date)
+        .all()
+    )
 
     now_dt = datetime.now()
     slots: list[dict] = []
@@ -307,9 +282,9 @@ def get_available_slots_logic(db: Session, doctor_id: int, selected_date: date) 
                 continue
             status_name = "available"
             label = "Còn trống"
-            for start_time, end_time, _reason in busy_rows:
-                start_key = str(start_time)[:5]
-                end_key = str(end_time)[:5]
+            for busy_slot in busy_rows:
+                start_key = busy_slot.start_time.strftime("%H:%M")
+                end_key = busy_slot.end_time.strftime("%H:%M")
                 if start_key <= key < end_key:
                     status_name = "busy"
                     label = "Bác sĩ bận"
@@ -393,7 +368,6 @@ def serialize_invoice(db: Session, invoice: Invoice) -> dict:
         "total_amount": float(invoice.total_amount),
         "paid_amount": float(invoice.paid_amount),
         "notes": invoice.notes,
-        "locked_at": invoice.locked_at,
         "items": invoice_items_payload(db, invoice.id),
         "transactions": transactions_payload(db, invoice.id),
     }
@@ -655,10 +629,60 @@ def create_doctor_schedule(
     current_user: User = Depends(require_role(["admin"])),
 ):
     get_doctor_or_404(db, doctor_id)
-    schedule = DoctorSchedule(doctor_id=doctor_id, **payload.model_dump())
+    schedule = DoctorSchedule(doctor_id=doctor_id, managed_by=current_user.id, **payload.model_dump())
     db.add(schedule)
     db.commit()
     return {"message": "Lịch làm việc đã được cập nhật", "id": schedule.id}
+
+
+@router.put("/api/v1/admin/doctors/{doctor_id}/schedule/{schedule_id}")
+@router.put("/api/v1/doctors/{doctor_id}/schedule/{schedule_id}")
+def update_doctor_schedule(
+    doctor_id: int,
+    schedule_id: int,
+    payload: DoctorSchedulePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    get_doctor_or_404(db, doctor_id)
+    schedule = db.query(DoctorSchedule).filter(DoctorSchedule.id == schedule_id, DoctorSchedule.doctor_id == doctor_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    for key, value in payload.model_dump().items():
+        setattr(schedule, key, value)
+    db.commit()
+    return {"message": "Đã cập nhật lịch làm việc"}
+
+
+@router.delete("/api/v1/admin/doctors/{doctor_id}/schedule/{schedule_id}")
+@router.delete("/api/v1/doctors/{doctor_id}/schedule/{schedule_id}")
+def delete_doctor_schedule(
+    doctor_id: int,
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    schedule = db.query(DoctorSchedule).filter(DoctorSchedule.id == schedule_id, DoctorSchedule.doctor_id == doctor_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    db.delete(schedule)
+    db.commit()
+    return {"message": "Đã xóa lịch làm việc"}
+
+
+@router.get("/api/v1/admin/doctors/{doctor_id}/leaves")
+@router.get("/api/v1/doctors/{doctor_id}/leaves")
+def get_doctor_leaves(doctor_id: int, db: Session = Depends(get_db)):
+    get_doctor_or_404(db, doctor_id)
+    leaves = db.query(DoctorLeave).filter(DoctorLeave.doctor_id == doctor_id).order_by(DoctorLeave.leave_date.desc()).all()
+    return [
+        {
+            "id": leaf.id,
+            "leave_date": leaf.leave_date,
+            "reason": leaf.reason,
+        }
+        for leaf in leaves
+    ]
 
 
 @router.post("/api/v1/admin/doctors/{doctor_id}/leave")
@@ -674,6 +698,25 @@ def create_doctor_leave(
     db.add(leave)
     db.commit()
     return {"message": "Đã ghi nhận ngày nghỉ", "id": leave.id}
+
+
+@router.put("/api/v1/admin/doctors/{doctor_id}/leave/{leave_id}")
+@router.put("/api/v1/doctors/{doctor_id}/leave/{leave_id}")
+def update_doctor_leave(
+    doctor_id: int,
+    leave_id: int,
+    payload: DoctorLeavePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    get_doctor_or_404(db, doctor_id)
+    leave = db.query(DoctorLeave).filter(DoctorLeave.id == leave_id, DoctorLeave.doctor_id == doctor_id).first()
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    leave.leave_date = payload.leave_date
+    leave.reason = payload.reason
+    db.commit()
+    return {"message": "Đã cập nhật ngày nghỉ"}
 
 
 @router.delete("/api/v1/admin/doctors/{doctor_id}/leave/{leave_date}")
@@ -710,6 +753,23 @@ def create_holiday(
     db.add(holiday)
     db.commit()
     return {"message": "Đã thêm ngày nghỉ", "id": holiday.id}
+
+
+@router.put("/api/v1/holidays/{holiday_id}")
+def update_holiday(
+    holiday_id: int,
+    payload: HolidayPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    holiday = db.query(ClinicHoliday).filter(ClinicHoliday.id == holiday_id).first()
+    if not holiday:
+        raise HTTPException(status_code=404, detail="Holiday not found")
+    holiday.holiday_date = payload.holiday_date
+    holiday.name = payload.name
+    holiday.is_active = payload.is_active
+    db.commit()
+    return {"message": "Đã cập nhật ngày nghỉ"}
 
 
 @router.delete("/api/v1/holidays/{holiday_id}")
@@ -788,12 +848,14 @@ def build_appointment(
     if overlapping:
         raise HTTPException(status_code=400, detail="Patient already has an appointment at this time")
 
+    # AppointmentCreate no longer contains booking_source; default to patient_app
+    # for public patient bookings unless an explicit source is passed in.
     appointment = Appointment(
         patient_id=patient_id,
         doctor_id=doctor.id,
         primary_service_id=payload.primary_service_id,
         visit_type=visit_type,
-        booking_source=booking_source or map_booking_source(payload.booking_source),
+        booking_source=booking_source or BookingSource.patient_app,
         appointment_date=payload.appointment_date,
         appointment_time=payload.appointment_time,
         duration_minutes=payload.duration_minutes,
@@ -1351,7 +1413,7 @@ def sync_invoice_payment_status(invoice: Invoice, db: Session) -> None:
         return
     if invoice.paid_amount <= 0:
         invoice.payment_status = PaymentStatus.unpaid
-        invoice.invoice_status = InvoiceStatus.issued if invoice.locked_at else InvoiceStatus.draft
+        invoice.invoice_status = InvoiceStatus.draft
     elif invoice.paid_amount < float(invoice.total_amount):
         invoice.payment_status = PaymentStatus.partial
         invoice.invoice_status = InvoiceStatus.partially_paid
@@ -1471,7 +1533,6 @@ def pay_invoice(
         paid_at=utcnow() if tx_status == TransactionStatus.success else None,
     )
     db.add(tx)
-    invoice.locked_at = invoice.locked_at or utcnow()
     invoice.invoice_status = InvoiceStatus.issued
     if tx_status == TransactionStatus.pending:
         invoice.payment_status = PaymentStatus.awaiting_confirmation
@@ -1507,11 +1568,8 @@ def approve_credit(
     current_user: User = Depends(require_role(["admin", "pharmacist"])),
 ):
     invoice = get_invoice_or_404(db, invoice_id)
-    invoice.locked_at = invoice.locked_at or utcnow()
     invoice.invoice_status = InvoiceStatus.issued
     invoice.payment_status = PaymentStatus.credit_approved
-    invoice.credit_approved_by = current_user.id
-    invoice.credit_approved_at = utcnow()
     invoice.notes = payload.notes or invoice.notes
     db.commit()
     return serialize_invoice(db, invoice)
@@ -1577,23 +1635,15 @@ def create_busy_slot(
     current_user: User = Depends(require_role(["admin"])),
 ):
     get_doctor_or_404(db, doctor_id)
-    ensure_doctor_busy_slots_table(db)
-    db.execute(
-        text(
-            """
-        INSERT INTO doctor_busy_slots (doctor_id, busy_date, start_time, end_time, reason, created_by)
-        VALUES (:doctor_id, :busy_date, :start_time, :end_time, :reason, :created_by)
-        """
-        ),
-        {
-            "doctor_id": doctor_id,
-            "busy_date": payload.busy_date.isoformat(),
-            "start_time": payload.start_time.strftime("%H:%M:%S"),
-            "end_time": payload.end_time.strftime("%H:%M:%S"),
-            "reason": payload.reason,
-            "created_by": current_user.id,
-        },
+    busy_slot = DoctorBusySlot(
+        doctor_id=doctor_id,
+        busy_date=payload.busy_date,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        reason=payload.reason,
+        created_by=current_user.id,
     )
+    db.add(busy_slot)
     db.commit()
     return {"message": "Đã tạo khoảng bận cho bác sĩ"}
 
@@ -1606,26 +1656,10 @@ def propose_reschedule(
     current_user: User = Depends(require_role(["doctor", "admin"])),
 ):
     appointment = get_appointment_or_404(db, appointment_id)
-    proposal = db.query(AppointmentProposal).filter(AppointmentProposal.appointment_id == appointment.id).first()
-    if proposal:
-        proposal.proposed_date = payload.proposed_date
-        proposal.proposed_time = payload.proposed_time
-        proposal.note = payload.note
-        proposal.discount_percent = payload.discount_percent
-        proposal.discount_note = payload.discount_note
-        proposal.created_by = current_user.id
-    else:
-        db.add(
-            AppointmentProposal(
-                appointment_id=appointment.id,
-                proposed_date=payload.proposed_date,
-                proposed_time=payload.proposed_time,
-                note=payload.note,
-                discount_percent=payload.discount_percent,
-                discount_note=payload.discount_note,
-                created_by=current_user.id,
-            )
-        )
+    appointment.proposed_date = payload.proposed_date
+    appointment.proposed_time = payload.proposed_time
+    appointment.discount_percent = payload.discount_percent
+    appointment.discount_note = payload.discount_note
     appointment.status = AppointmentStatus.pending
     appointment.notes = payload.note
     patient = get_patient_or_404(db, appointment.patient_id)
@@ -1722,6 +1756,22 @@ def unlock_account(user_id: int, db: Session = Depends(get_db), current_user: Us
     user.email_verified_at = user.email_verified_at or utcnow()
     db.commit()
     return {"message": "Đã mở khóa tài khoản"}
+
+
+@router.delete("/api/v1/admin/accounts/{user_id}")
+def delete_account(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    try:
+        db.delete(user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Không thể xóa tài khoản đã có dữ liệu liên kết. Vui lòng khóa tài khoản thay vì xóa.")
+    return {"message": "Đã xóa tài khoản"}
 
 
 @router.get("/api/v1/suppliers")

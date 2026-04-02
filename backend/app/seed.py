@@ -96,6 +96,7 @@ def seed_defaults(db: Session, admin_email: str, admin_password: str) -> None:
                     end_time=time(16, 30),
                     slot_duration=30,
                     max_patients=1,
+                    managed_by=admin.id,
                 )
             )
 
@@ -130,6 +131,7 @@ def seed_defaults(db: Session, admin_email: str, admin_password: str) -> None:
                     end_time=time(17, 0),
                     slot_duration=45,
                     max_patients=1,
+                    managed_by=admin.id,
                 )
             )
 
@@ -210,16 +212,18 @@ def seed_defaults(db: Session, admin_email: str, admin_password: str) -> None:
         )
 
     if not db.query(Supplier).count():
-        db.add(
-            Supplier(
-                name="Công ty Dược phẩm Mẫu",
-                contact_name="Nguyễn Văn A",
-                phone="0911222333",
-                email="nhacungcap@example.com",
-                address="TP.HCM",
-                tax_code="0312345678",
-            )
+        supplier = Supplier(
+            name="Công ty Dược phẩm Mẫu",
+            contact_name="Nguyễn Văn A",
+            phone="0911222333",
+            email="nhacungcap@example.com",
+            address="TP.HCM",
+            tax_code="0312345678",
         )
+        db.add(supplier)
+        db.flush()
+    else:
+        supplier = db.query(Supplier).first()
 
     if not db.query(Medicine).count():
         stock_rows = [
@@ -250,7 +254,7 @@ def seed_defaults(db: Session, admin_email: str, admin_password: str) -> None:
                     import_quantity=stock,
                     remaining_quantity=stock,
                     import_unit_cost=int(price * 0.7),
-                    supplier_name="Công ty Dược phẩm Mẫu",
+                    supplier_id=supplier.id,
                 )
             )
     db.commit()

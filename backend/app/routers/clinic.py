@@ -3,7 +3,7 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from reportlab.pdfgen import canvas
-from sqlalchemy import func, or_, text
+from sqlalchemy import case, func, or_, text
 from sqlalchemy.orm import Session, aliased
 
 from app.core.database import get_db
@@ -777,7 +777,12 @@ def list_doctor_pharmacist_paid_invoices(
             )
         )
 
-    rows = query.order_by(Invoice.paid_at.desc().nullslast(), Invoice.id.desc()).all()
+    # MySQL does not support NULLS LAST; put NULL paid_at last explicitly.
+    rows = query.order_by(
+        case((Invoice.paid_at.is_(None), 1), else_=0),
+        Invoice.paid_at.desc(),
+        Invoice.id.desc(),
+    ).all()
     return [serialize_doctor_paid_invoice_summary(db, inv) for inv in rows]
 
 

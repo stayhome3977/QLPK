@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/http";
+import { useAuth } from "../../auth";
 import { EmptyState, Field, Panel } from "../../components/shared/UI";
-import { fmtDate, fmtTime, STATUS_LABELS } from "../../utils/helpers";
+import { currency, fmtDate, fmtDateTime, fmtTime, PAYMENT_STATUS_LABELS, STATUS_LABELS } from "../../utils/helpers";
 
 export function DoctorPortal({ loading, data, reload, activeTab }) {
   const appointments = data["/api/v1/appointments"] || [];
   const medicines = data["/api/v1/medicines"] || [];
+  const { user } = useAuth();
   const waitingAppointments = useMemo(
     () => appointments.filter((item) => ["pending", "confirmed", "checked_in", "in_progress"].includes(item.status)),
     [appointments],
@@ -21,11 +23,75 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
   const [selected, setSelected] = useState(null);
   const [proposal, setProposal] = useState({ proposed_date: "", proposed_time: "", note: "", discount_percent: 0, discount_note: "" });
   const [record, setRecord] = useState({ diagnosis: "", symptoms: "" });
-  const [prescription, setPrescription] = useState({ medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" });
+  const [prescriptionDraft, setPrescriptionDraft] = useState({ medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" });
+  const [prescriptionItems, setPrescriptionItems] = useState([]);
+  const [schedule, setSchedule] = useState([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [debouncedHistoryQ, setDebouncedHistoryQ] = useState("");
+  const [paidInvoices, setPaidInvoices] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedHistoryQ(historyQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [historyQuery]);
+
+  useEffect(() => {
+    if (activeTab !== "lichsubenhnhan") return;
+    let cancelled = false;
+    (async () => {
+      setHistoryLoading(true);
+      setHistoryError("");
+      try {
+        const params = debouncedHistoryQ ? { q: debouncedHistoryQ } : {};
+        const { data } = await api.get("/api/v1/doctors/me/paid-invoices", { params });
+        if (!cancelled) setPaidInvoices(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (!cancelled) {
+          setPaidInvoices([]);
+          setHistoryError(e.response?.data?.detail || "Không tải được danh sách.");
+        }
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, debouncedHistoryQ, historyRefreshKey]);
+
+  useEffect(() => {
+    const loadSchedule = async () => {
+      if (!user?.id) return;
+      try {
+        setScheduleLoading(true);
+        const { data: doctors } = await api.get("/api/v1/doctors");
+        const me = doctors.find((item) => item.user?.id === user.id);
+        if (!me) {
+          setSchedule([]);
+          return;
+        }
+        const { data } = await api.get(`/api/v1/doctors/${me.id}/schedule`);
+        setSchedule(data || []);
+      } catch {
+        setSchedule([]);
+      } finally {
+        setScheduleLoading(false);
+      }
+    };
+
+    loadSchedule();
+  }, [user?.id]);
 
   const chooseAppointment = (appointment) => {
     setSelected(appointment);
     setRecord({ diagnosis: "", symptoms: appointment.chief_complaint || "" });
+    setPrescriptionDraft({ medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" });
+    setPrescriptionItems([]);
   };
 
   const activeList = useMemo(() => {
@@ -99,6 +165,47 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
     await reload();
   };
 
+  const resetPrescriptionState = () => {
+    setPrescriptionDraft({ medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" });
+    setPrescriptionItems([]);
+  };
+
+  const addMedicineToPrescription = () => {
+    if (!prescriptionDraft.medicine_id) return;
+    const medicineId = String(prescriptionDraft.medicine_id);
+    const existingIndex = prescriptionItems.findIndex((item) => String(item.medicine_id) === medicineId);
+    const parsedQuantity = Number(prescriptionDraft.quantity || 0);
+    if (!parsedQuantity || parsedQuantity <= 0) {
+      alert("Số lượng thuốc phải lớn hơn 0.");
+      return;
+    }
+    const baseItem = {
+      medicine_id: Number(medicineId),
+      quantity: parsedQuantity,
+      dosage: prescriptionDraft.dosage,
+      frequency: prescriptionDraft.frequency,
+    };
+    if (existingIndex >= 0) {
+      const next = [...prescriptionItems];
+      next[existingIndex] = { ...next[existingIndex], ...baseItem, quantity: parsedQuantity };
+      setPrescriptionItems(next);
+    } else {
+      setPrescriptionItems((prev) => [...prev, baseItem]);
+    }
+  };
+
+  const updateItemQuantity = (medicineId, quantity) => {
+    const parsed = Number(quantity || 0);
+    if (!parsed || parsed <= 0) return;
+    setPrescriptionItems((items) =>
+      items.map((item) => (String(item.medicine_id) === String(medicineId) ? { ...item, quantity: parsed } : item)),
+    );
+  };
+
+  const removeItem = (medicineId) => {
+    setPrescriptionItems((items) => items.filter((item) => String(item.medicine_id) !== String(medicineId)));
+  };
+
   const saveRecord = async () => {
     const medicalRecord = await api.post("/api/v1/medical-records", {
       appointment_id: selected.id,
@@ -108,24 +215,34 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
       symptoms: record.symptoms,
     });
 
-    if (prescription.medicine_id) {
+    const itemsPayload =
+      prescriptionItems.length > 0
+        ? prescriptionItems
+        : prescriptionDraft.medicine_id
+        ? [
+            {
+              medicine_id: Number(prescriptionDraft.medicine_id),
+              quantity: Number(prescriptionDraft.quantity),
+              dosage: prescriptionDraft.dosage,
+              frequency: prescriptionDraft.frequency,
+            },
+          ]
+        : [];
+
+    if (itemsPayload.length > 0) {
       await api.post("/api/v1/prescriptions", {
         medical_record_id: medicalRecord.data.id,
         patient_id: selected.patient_id,
         doctor_id: selected.doctor_id,
-        items: [
-          {
-            medicine_id: Number(prescription.medicine_id),
-            quantity: Number(prescription.quantity),
-            dosage: prescription.dosage,
-            frequency: prescription.frequency,
-            unit_price: Number(medicines.find((item) => String(item.id) === String(prescription.medicine_id))?.price_per_unit || 0),
-          },
-        ],
+        items: itemsPayload.map((item) => ({
+          ...item,
+          unit_price: Number(medicines.find((m) => String(m.id) === String(item.medicine_id))?.price_per_unit || 0),
+        })),
       });
     }
 
     await reload();
+    resetPrescriptionState();
   };
 
   return (
@@ -251,12 +368,19 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
                 <p>
                   <strong>{selected.patient_name}</strong> - {selected.chief_complaint}
                 </p>
+                {Array.isArray(selected.services) && selected.services.length > 0 && (
+                  <div className="list-stack">
+                    <strong>Dịch vụ đã chọn</strong>
+                    <ul>
+                      {selected.services.map((service) => (
+                        <li key={service.service_id}>
+                          {service.name} {service.quantity > 1 ? `× ${service.quantity}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="row-actions">
-                  {selected.status === "confirmed" || selected.status === "checked_in" ? (
-                    <button className="secondary-link button-link" onClick={start}>
-                      Bắt đầu khám
-                    </button>
-                  ) : null}
                   {selected.status === "in_progress" ? (
                     <button className="secondary-link button-link" onClick={complete}>
                       Hoàn tất khám
@@ -270,9 +394,12 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
                   <input value={record.diagnosis} onChange={(e) => setRecord((p) => ({ ...p, diagnosis: e.target.value }))} />
                 </Field>
                 <div className="form-columns">
-                  <Field label="Thuốc">
-                    <select value={prescription.medicine_id} onChange={(e) => setPrescription((p) => ({ ...p, medicine_id: e.target.value }))}>
-                      <option value="">Không kê thuốc</option>
+                  <Field label="Danh sách thuốc">
+                    <select
+                      value={prescriptionDraft.medicine_id}
+                      onChange={(e) => setPrescriptionDraft((p) => ({ ...p, medicine_id: e.target.value }))}
+                    >
+                      <option value="">Chọn thuốc để thêm</option>
                       {medicines.map((medicine) => (
                         <option key={medicine.id} value={medicine.id}>
                           {medicine.name} - tồn {medicine.current_stock}
@@ -281,9 +408,48 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
                     </select>
                   </Field>
                   <Field label="Số lượng">
-                    <input type="number" value={prescription.quantity} onChange={(e) => setPrescription((p) => ({ ...p, quantity: e.target.value }))} />
+                    <input
+                      type="number"
+                      value={prescriptionDraft.quantity}
+                      onChange={(e) => setPrescriptionDraft((p) => ({ ...p, quantity: e.target.value }))}
+                    />
+                  </Field>
+                  <Field label=" ">
+                    <button type="button" className="primary-button" onClick={addMedicineToPrescription}>
+                      Nhập thuốc vào đơn
+                    </button>
                   </Field>
                 </div>
+                {prescriptionItems.length > 0 && (
+                  <div className="list-stack">
+                    <strong>Thuốc đã thêm ({prescriptionItems.length})</strong>
+                    <ul>
+                      {prescriptionItems.map((item) => {
+                        const medicine = medicines.find((m) => String(m.id) === String(item.medicine_id));
+                        return (
+                          <li key={item.medicine_id} className="list-row">
+                            <div>
+                              <strong>{medicine?.name || `Thuốc #${item.medicine_id}`}</strong>
+                              <p>Tồn kho: {medicine?.current_stock ?? "—"}</p>
+                            </div>
+                            <div className="row-actions">
+                              <input
+                                type="number"
+                                value={item.quantity}
+                                min={1}
+                                onChange={(e) => updateItemQuantity(item.medicine_id, e.target.value)}
+                                style={{ width: 80, marginRight: 8 }}
+                              />
+                              <button type="button" className="secondary-link button-link" onClick={() => removeItem(item.medicine_id)}>
+                                Xóa
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
                 <button className="primary-button" onClick={saveRecord}>
                   Lưu bệnh án và gửi đơn thuốc
                 </button>
@@ -293,9 +459,111 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
         </div>
       )}
 
-      {["benhnhan", "danhsachbenhnhanhomnay", "lichsubenhnhan", "lichlamviec"].includes(activeTab) && (
+      {activeTab === "lichsubenhnhan" && (
+        <Panel title="Lịch sử bệnh nhân — phiếu đã thanh toán (dược sĩ)">
+          <p style={{ marginTop: 0, color: "var(--muted)", fontSize: "0.95rem" }}>
+            Danh sách hóa đơn đã thanh toán đủ do dược sĩ xử lý, liên quan lịch hẹn của bạn. Chỉ xem.
+          </p>
+          <div className="form-columns" style={{ alignItems: "flex-end", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+            <Field label="Tìm kiếm">
+              <input
+                type="search"
+                placeholder="Tên BN, SĐT, mã BN, số hóa đơn..."
+                value={historyQuery}
+                onChange={(e) => setHistoryQuery(e.target.value)}
+                style={{ minWidth: 240 }}
+              />
+            </Field>
+            <Field label=" ">
+              <button type="button" className="ghost-button" onClick={() => setHistoryRefreshKey((k) => k + 1)}>
+                Làm mới
+              </button>
+            </Field>
+          </div>
+          {historyError ? <p className="error">{historyError}</p> : null}
+          {historyLoading ? (
+            <p>Đang tải...</p>
+          ) : paidInvoices.length === 0 ? (
+            <EmptyState text="Chưa có phiếu nào đã thanh toán qua dược sĩ, hoặc không khớp tìm kiếm." />
+          ) : (
+            <div className="pharm-table-wrap">
+              <table className="pharm-table">
+                <thead>
+                  <tr>
+                    <th>Số hóa đơn</th>
+                    <th>Bệnh nhân</th>
+                    <th>Ngày khám</th>
+                    <th>Tổng tiền</th>
+                    <th>Thanh toán lúc</th>
+                    <th>TT thanh toán</th>
+                    <th>Dược sĩ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paidInvoices.map((row) => (
+                    <tr key={row.id}>
+                      <td>
+                        <strong>{row.invoice_number}</strong>
+                      </td>
+                      <td>
+                        <div>{row.patient_name}</div>
+                        <small style={{ color: "var(--muted)" }}>
+                          {[row.patient_code, row.patient_phone].filter(Boolean).join(" · ") || "—"}
+                        </small>
+                      </td>
+                      <td>
+                        {row.appointment_date ? (
+                          <>
+                            {fmtDate(row.appointment_date)}
+                            {row.appointment_time ? ` · ${fmtTime(row.appointment_time)}` : ""}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>{currency(row.total_amount)}</td>
+                      <td>{fmtDateTime(row.paid_at)}</td>
+                      <td>
+                        <span className={`badge badge-${row.payment_status}`}>
+                          {PAYMENT_STATUS_LABELS[row.payment_status] || row.payment_status}
+                        </span>
+                      </td>
+                      <td>{row.pharmacist_name || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      )}
+
+      {["benhnhan", "danhsachbenhnhanhomnay"].includes(activeTab) && (
         <Panel title="Chức năng trống">
           <EmptyState text="Chức năng này đang được phát triển hoặc chưa có dữ liệu." />
+        </Panel>
+      )}
+
+      {activeTab === "lichlamviec" && (
+        <Panel title="Lịch làm việc của tôi">
+          {scheduleLoading ? (
+            <p>Đang tải lịch làm việc...</p>
+          ) : schedule.length === 0 ? (
+            <EmptyState text="Chưa có lịch làm việc nào được cấu hình. Vui lòng liên hệ quản trị." />
+          ) : (
+            <div className="list-stack">
+              {schedule.map((item) => (
+                <div key={item.id} className="list-row">
+                  <div>
+                    <strong>Thứ {item.day_of_week}</strong>
+                    <p>
+                      {item.start_time} - {item.end_time} · Slot {item.slot_duration} phút · Tối đa {item.max_patients} bệnh nhân
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Panel>
       )}
     </div>

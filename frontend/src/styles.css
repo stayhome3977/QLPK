@@ -1199,7 +1199,7 @@ textarea {
 }
 .badge-pending, .badge-draft   { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
 .badge-prepared, .badge-issued { background: rgba(36, 116, 216, 0.12); color: var(--primary); }
-.badge-dispensed, .badge-paid  { background: rgba(32, 178, 107, 0.13); color: #116840; }
+.badge-dispensed, .badge-paid, .badge-credit_approved  { background: rgba(32, 178, 107, 0.13); color: #116840; }
 .badge-cancelled, .badge-refunded { background: rgba(228, 88, 88, 0.12); color: #9a2c2c; }
 .badge-awaiting_payment, .badge-partially_paid { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
 .badge-warn { background: rgba(228, 88, 88, 0.1); color: var(--red); border-radius: 6px; padding: 2px 8px; }

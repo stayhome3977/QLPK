@@ -106,10 +106,10 @@ function useDashboardData(role) {
   const load = async () => {
     try {
       const requests = {
-        patient: ["/api/v1/appointments", "/api/v1/doctors", "/api/v1/services", "/api/v1/invoices"],
+        patient: ["/api/v1/appointments", "/api/v1/doctors", "/api/v1/services", "/api/v1/invoices", "/api/v1/patients/me"],
         doctor: ["/api/v1/appointments", "/api/v1/patients", "/api/v1/medicines"],
         pharmacist: ["/api/v1/medicines", "/api/v1/prescriptions", "/api/v1/invoices", "/api/v1/suppliers", "/api/v1/appointments/completed-no-invoice"],
-        admin: ["/api/v1/reports/dashboard", "/api/v1/doctors", "/api/v1/medicines", "/api/v1/admin/accounts", "/api/v1/holidays"],
+        admin: ["/api/v1/reports/dashboard", "/api/v1/doctors", "/api/v1/medicines", "/api/v1/admin/accounts", "/api/v1/holidays", "/api/v1/admin/contracts"],
       }[role] || [];
 
       const results = await Promise.all(requests.map((path) => api.get(path)));
@@ -141,19 +141,16 @@ function PortalScreen({ role, title, subtitle, render }) {
 
   const TABS = {
     admin: [
-      { id: "trangdieukhien", label: "Trang điều khiển" },
       { id: "danhsach", label: "Danh sách" },
       { id: "quanlylich", label: "Quản lý lịch" },
       { id: "taikhoan", label: "Tài khoản" },
+      { id: "hopdong", label: "Hợp đồng" },
       { id: "baocao", label: "Báo cáo" },
     ],
     doctor: [
       { id: "trangdieukhien", label: "Trang điều khiển" },
       { id: "duyetlichhen", label: "Duyệt lịch hẹn" },
-      { id: "benhnhan", label: "Bệnh nhân" },
-      { id: "danhsachbenhnhanhomnay", label: "Danh sách bệnh nhân hôm nay" },
       { id: "khambenh", label: "Khám bệnh" },
-      { id: "kedonthuoc", label: "Kê đơn thuốc" },
       { id: "lichsubenhnhan", label: "Lịch sử bệnh nhân" },
       { id: "lichlamviec", label: "Lịch làm việc" },
     ],

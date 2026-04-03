@@ -7,12 +7,14 @@ export function AdminPortal({ loading, data, reload, activeTab }) {
   const [customDashboard, setCustomDashboard] = useState(null);
   const [reportDate, setReportDate] = useState(() => new Date().toLocaleDateString("en-CA"));
   const [isRefreshingReport, setIsRefreshingReport] = useState(false);
+  const [isRefreshingHoSo, setIsRefreshingHoSo] = useState(false);
 
   const dashboard = customDashboard || data["/api/v1/reports/dashboard"] || {};
   const doctors = data["/api/v1/doctors"] || [];
   const medicines = data["/api/v1/medicines"] || [];
   const accounts = data["/api/v1/admin/accounts"] || [];
   const holidays = data["/api/v1/holidays"] || [];
+  const doctorProfiles = data["/api/v1/admin/contracts"] || [];
 
   const [danhSachTab, setDanhSachTab] = useState("bacsi");
   const [lichTab, setLichTab] = useState("lichkhambacsi");
@@ -44,6 +46,33 @@ export function AdminPortal({ loading, data, reload, activeTab }) {
   });
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [searchAccount, setSearchAccount] = useState("");
+  const [contractForm, setContractForm] = useState({
+    doctor_id: "",
+    ho_ten: "",
+    ngay_sinh: "",
+    gioi_tinh: "",
+    dia_chi: "",
+    so_cccd: "",
+    so_dien_thoai: "",
+    email_lien_he: "",
+    ngay_vao_lam: "",
+    ngay_het_han_hop_dong: "",
+    nguoi_ky_hop_dong: "",
+    ngay_het_han_chung_chi: "",
+    vi_tri_cong_tac: "",
+    ghi_chu: "",
+  });
+  const [selectedContractId, setSelectedContractId] = useState(null);
+  const [searchContract, setSearchContract] = useState("");
+  /** null | "add" | "edit" — form chỉ hiện trong modal */
+  const [hoSoFormModal, setHoSoFormModal] = useState(null);
+  /** dòng đang xem chi tiết (read-only modal) */
+  const [hoSoDetailRow, setHoSoDetailRow] = useState(null);
+
+  const toDateInput = (v) => (v && typeof v === "string" ? v.slice(0, 10) : "");
+  const dash = (v) => (v != null && String(v).trim() !== "" ? v : "—");
+  const GENDER_LABELS = { male: "Nam", female: "Nữ", other: "Khác" };
+  const optionalDate = (s) => (s && String(s).trim() ? s : null);
 
   const [holidayForm, setHolidayForm] = useState({ holiday_date: "", name: "" });
 
@@ -258,36 +287,148 @@ export function AdminPortal({ loading, data, reload, activeTab }) {
     }
   };
 
-
-  const lockAccount = async (id, active) => {
-    await api.patch(`/api/v1/admin/accounts/${id}/${active ? "lock" : "unlock"}`);
-    await reload();
-  };
-
   const filteredAccounts = accounts.filter(a => 
       a.email.toLowerCase().includes(searchAccount.toLowerCase()) || 
       a.full_name.toLowerCase().includes(searchAccount.toLowerCase())
   );
 
+  const filteredContracts = doctorProfiles.filter((p) =>
+    `${p.ho_ten} ${p.so_cccd} ${p.vi_tri_cong_tac || ""} ${p.email_lien_he || ""}`
+      .toLowerCase()
+      .includes(searchContract.toLowerCase())
+  );
+
+  const doctorSelectOptions = doctors.filter((d) => {
+    const taken = doctorProfiles.some((p) => p.doctor_id === d.id && p.id !== selectedContractId);
+    return !taken;
+  });
+
+  const onSelectContract = (row) => {
+    setSelectedContractId(row.id);
+    setContractForm({
+      doctor_id: row.doctor_id ?? "",
+      ho_ten: row.ho_ten || "",
+      ngay_sinh: toDateInput(row.ngay_sinh),
+      gioi_tinh: row.gioi_tinh || "",
+      dia_chi: row.dia_chi || "",
+      so_cccd: row.so_cccd || "",
+      so_dien_thoai: row.so_dien_thoai || "",
+      email_lien_he: row.email_lien_he || "",
+      ngay_vao_lam: toDateInput(row.ngay_vao_lam),
+      ngay_het_han_hop_dong: toDateInput(row.ngay_het_han_hop_dong),
+      nguoi_ky_hop_dong: row.nguoi_ky_hop_dong || "",
+      ngay_het_han_chung_chi: toDateInput(row.ngay_het_han_chung_chi),
+      vi_tri_cong_tac: row.vi_tri_cong_tac || "",
+      ghi_chu: row.ghi_chu || "",
+    });
+  };
+
+  const emptyProfileForm = () => ({
+    doctor_id: "",
+    ho_ten: "",
+    ngay_sinh: "",
+    gioi_tinh: "",
+    dia_chi: "",
+    so_cccd: "",
+    so_dien_thoai: "",
+    email_lien_he: "",
+    ngay_vao_lam: "",
+    ngay_het_han_hop_dong: "",
+    nguoi_ky_hop_dong: "",
+    ngay_het_han_chung_chi: "",
+    vi_tri_cong_tac: "",
+    ghi_chu: "",
+  });
+
+  const payloadFromForm = () => ({
+    doctor_id: Number(contractForm.doctor_id),
+    ho_ten: contractForm.ho_ten,
+    ngay_sinh: optionalDate(contractForm.ngay_sinh),
+    gioi_tinh: contractForm.gioi_tinh || null,
+    dia_chi: contractForm.dia_chi || null,
+    so_cccd: contractForm.so_cccd,
+    so_dien_thoai: contractForm.so_dien_thoai || null,
+    email_lien_he: contractForm.email_lien_he || null,
+    ngay_vao_lam: contractForm.ngay_vao_lam,
+    ngay_het_han_hop_dong: optionalDate(contractForm.ngay_het_han_hop_dong),
+    nguoi_ky_hop_dong: contractForm.nguoi_ky_hop_dong || null,
+    ngay_het_han_chung_chi: optionalDate(contractForm.ngay_het_han_chung_chi),
+    vi_tri_cong_tac: contractForm.vi_tri_cong_tac || null,
+    ghi_chu: contractForm.ghi_chu || null,
+  });
+
+  const createContract = async () => {
+    if (!contractForm.doctor_id || !contractForm.ho_ten || !contractForm.so_cccd || !contractForm.ngay_vao_lam) {
+      return alert("Vui lòng chọn bác sĩ và nhập đủ Họ tên, Số CCCD, Ngày vào làm");
+    }
+    try {
+      await api.post("/api/v1/admin/contracts", payloadFromForm());
+      await reload();
+      setSelectedContractId(null);
+      setContractForm(emptyProfileForm());
+      setHoSoFormModal(null);
+      alert("Đã thêm hồ sơ bác sĩ");
+    } catch (e) {
+      alert(e.response?.data?.detail || "Lỗi khi thêm hồ sơ");
+    }
+  };
+
+  const updateContract = async () => {
+    if (!selectedContractId) return alert("Vui lòng chọn một dòng trong bảng để sửa");
+    if (!contractForm.doctor_id || !contractForm.ho_ten || !contractForm.so_cccd || !contractForm.ngay_vao_lam) {
+      return alert("Vui lòng chọn bác sĩ và nhập đủ Họ tên, Số CCCD, Ngày vào làm");
+    }
+    try {
+      await api.put(`/api/v1/admin/contracts/${selectedContractId}`, payloadFromForm());
+      await reload();
+      setHoSoFormModal(null);
+      alert("Đã cập nhật hồ sơ bác sĩ");
+    } catch (e) {
+      alert(e.response?.data?.detail || "Lỗi khi cập nhật hồ sơ");
+    }
+  };
+
+  const openHoSoAddModal = () => {
+    setSelectedContractId(null);
+    setContractForm(emptyProfileForm());
+    setHoSoFormModal("add");
+  };
+
+  const openHoSoEditModal = () => {
+    if (!selectedContractId) return alert("Vui lòng chọn một dòng trong bảng để sửa");
+    setHoSoFormModal("edit");
+  };
+
+  const deleteContract = async () => {
+    if (!selectedContractId) return alert("Vui lòng chọn hồ sơ để xóa");
+    if (!window.confirm("Bạn có chắc chắn muốn xóa hồ sơ bác sĩ này?")) return;
+    try {
+      await api.delete(`/api/v1/admin/contracts/${selectedContractId}`);
+      await reload();
+      setSelectedContractId(null);
+      setContractForm(emptyProfileForm());
+      setHoSoFormModal(null);
+      alert("Đã xóa hồ sơ bác sĩ");
+    } catch (e) {
+      alert(e.response?.data?.detail || "Lỗi khi xóa hồ sơ");
+    }
+  };
+
+  const exportContractsPdf = () => {
+    window.open("/api/v1/admin/contracts/pdf", "_blank");
+  };
+
+  const refreshHoSo = async () => {
+    setIsRefreshingHoSo(true);
+    try {
+      await reload();
+    } finally {
+      setIsRefreshingHoSo(false);
+    }
+  };
+
   return (
     <div className="dashboard-sections">
-      {activeTab === "trangdieukhien" && (
-        <section className="summary-strip">
-          <div className="summary-card">
-            <strong>{dashboard.today_appointments || 0}</strong>
-            <span>Lịch hôm nay</span>
-          </div>
-          <div className="summary-card">
-            <strong>{dashboard.waiting || 0}</strong>
-            <span>Đang chờ</span>
-          </div>
-          <div className="summary-card">
-            <strong>{dashboard.low_stock_count || 0}</strong>
-            <span>Cảnh báo tồn kho</span>
-          </div>
-        </section>
-      )}
-
       {/* DANH SÁCH */}
       {activeTab === "danhsach" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -640,12 +781,9 @@ export function AdminPortal({ loading, data, reload, activeTab }) {
                          <td style={{ padding: "12px" }}>{ROLE_LABELS[acc.role] || acc.role}</td>
                          <td style={{ padding: "12px" }}>
                            {acc.is_active ? 
-                              <span style={{ color: "green" }}>Hoạt động</span> : 
-                              <span style={{ color: "red" }}>Đã khóa</span>
+                             <span style={{ color: "green" }}>Đang hoạt động</span> : 
+                             <span style={{ color: "red" }}>Không hoạt động</span>
                            }
-                           <button className="button-link" style={{ fontSize:"0.8rem", marginLeft:"8px" }} onClick={(e) => { e.stopPropagation(); lockAccount(acc.id, acc.is_active); }}>
-                             ({acc.is_active ? "Khóa" : "Mở khóa"})
-                           </button>
                          </td>
                       </tr>
                    ))}
@@ -684,6 +822,266 @@ export function AdminPortal({ loading, data, reload, activeTab }) {
                 </>
              )}
           </div>
+        </div>
+      )}
+
+      {/* HỢP ĐỒNG */}
+      {activeTab === "hopdong" && (
+        <div style={{ background: "#fff", borderRadius: "12px", border: "1px solid #E5E7EB", padding: "16px", display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button type="button" className="ghost-button" style={{ border: "1px solid #D1D5DB" }} onClick={openHoSoAddModal}>
+                Thêm
+              </button>
+              <button type="button" className="ghost-button" style={{ border: "1px solid #D1D5DB" }} onClick={openHoSoEditModal}>
+                Sửa
+              </button>
+              <button className="ghost-button" style={{ border: "1px solid #D1D5DB" }} onClick={deleteContract}>Xóa</button>
+              <button className="ghost-button" style={{ border: "1px solid #D1D5DB" }} onClick={exportContractsPdf}>Xuất PDF</button>
+              <button
+                type="button"
+                className="ghost-button"
+                style={{ border: "1px solid #D1D5DB" }}
+                onClick={refreshHoSo}
+                disabled={isRefreshingHoSo || loading}
+              >
+                {isRefreshingHoSo ? "Đang tải..." : "Làm mới"}
+              </button>
+            </div>
+            <input
+              placeholder="Tìm kiếm (họ tên, CCCD, vị trí, email)..."
+              value={searchContract}
+              onChange={(e) => setSearchContract(e.target.value)}
+              style={{ padding: "8px", border: "1px solid #D1D5DB", borderRadius: "4px" }}
+            />
+          </div>
+
+          <div style={{ border: "1px solid #E5E7EB", borderRadius: "8px", overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+              <thead>
+                <tr style={{ background: "#F3F4F6", textAlign: "left" }}>
+                  <th style={{ padding: "12px", borderBottom: "1px solid #E5E7EB" }}>Họ tên</th>
+                  <th style={{ padding: "12px", borderBottom: "1px solid #E5E7EB" }}>Mã bác sĩ</th>
+                  <th style={{ padding: "12px", borderBottom: "1px solid #E5E7EB" }}>CCCD</th>
+                  <th style={{ padding: "12px", borderBottom: "1px solid #E5E7EB" }}>Ngày vào làm</th>
+                  <th style={{ padding: "12px", borderBottom: "1px solid #E5E7EB" }}>Hết hạn HĐ</th>
+                  <th style={{ padding: "12px", borderBottom: "1px solid #E5E7EB" }}>Vị trí công tác</th>
+                  <th style={{ padding: "12px", borderBottom: "1px solid #E5E7EB", width: "130px" }}>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredContracts.map((row) => (
+                  <tr
+                    key={row.id}
+                    style={{ background: selectedContractId === row.id ? "#EFF6FF" : "white", cursor: "pointer", borderBottom: "1px solid #F3F4F6" }}
+                    onClick={() => onSelectContract(row)}
+                  >
+                    <td style={{ padding: "12px" }}>{row.ho_ten}</td>
+                    <td style={{ padding: "12px" }}>{row.doctor_id}</td>
+                    <td style={{ padding: "12px" }}>{row.so_cccd}</td>
+                    <td style={{ padding: "12px" }}>{row.ngay_vao_lam || "—"}</td>
+                    <td style={{ padding: "12px" }}>{row.ngay_het_han_hop_dong || "—"}</td>
+                    <td style={{ padding: "12px" }}>{row.vi_tri_cong_tac || "—"}</td>
+                    <td style={{ padding: "12px" }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        style={{ border: "1px solid #D1D5DB", fontSize: "0.85rem", padding: "6px 10px" }}
+                        onClick={() => setHoSoDetailRow(row)}
+                      >
+                        Xem chi tiết
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {hoSoFormModal && (
+            <div
+              role="presentation"
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(15, 23, 42, 0.45)",
+                zIndex: 1000,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px",
+              }}
+              onClick={() => setHoSoFormModal(null)}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                style={{
+                  background: "#fff",
+                  borderRadius: "12px",
+                  border: "1px solid #E5E7EB",
+                  maxWidth: "920px",
+                  width: "100%",
+                  maxHeight: "90vh",
+                  overflow: "auto",
+                  boxShadow: "0 20px 50px rgba(0,0,0,0.15)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h3 style={{ margin: 0, fontSize: "1.05rem", color: "#111827" }}>
+                    {hoSoFormModal === "add" ? "Thêm hồ sơ bác sĩ" : "Sửa hồ sơ bác sĩ"}
+                  </h3>
+                  <button type="button" className="ghost-button" style={{ border: "1px solid #D1D5DB" }} onClick={() => setHoSoFormModal(null)}>
+                    Đóng
+                  </button>
+                </div>
+                <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
+                  <Field label="Bác sĩ (tài khoản)">
+                    <select
+                      value={contractForm.doctor_id === "" ? "" : String(contractForm.doctor_id)}
+                      onChange={(e) => setContractForm((p) => ({ ...p, doctor_id: e.target.value === "" ? "" : Number(e.target.value) }))}
+                    >
+                      <option value="">— Chọn bác sĩ —</option>
+                      {doctorSelectOptions.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          #{d.id} — {d.user?.full_name || "Bác sĩ"} ({d.specialty})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Họ tên">
+                    <input value={contractForm.ho_ten} onChange={(e) => setContractForm((p) => ({ ...p, ho_ten: e.target.value }))} />
+                  </Field>
+                  <Field label="Giới tính">
+                    <select value={contractForm.gioi_tinh} onChange={(e) => setContractForm((p) => ({ ...p, gioi_tinh: e.target.value }))}>
+                      <option value="">—</option>
+                      <option value="male">Nam</option>
+                      <option value="female">Nữ</option>
+                      <option value="other">Khác</option>
+                    </select>
+                  </Field>
+                  <Field label="Ngày sinh">
+                    <input type="date" value={contractForm.ngay_sinh} onChange={(e) => setContractForm((p) => ({ ...p, ngay_sinh: e.target.value }))} />
+                  </Field>
+                  <Field label="Số CCCD">
+                    <input value={contractForm.so_cccd} onChange={(e) => setContractForm((p) => ({ ...p, so_cccd: e.target.value }))} />
+                  </Field>
+                  <Field label="Số điện thoại">
+                    <input value={contractForm.so_dien_thoai} onChange={(e) => setContractForm((p) => ({ ...p, so_dien_thoai: e.target.value }))} />
+                  </Field>
+                  <Field label="Email liên hệ">
+                    <input type="email" value={contractForm.email_lien_he} onChange={(e) => setContractForm((p) => ({ ...p, email_lien_he: e.target.value }))} />
+                  </Field>
+                  <Field label="Ngày vào làm">
+                    <input type="date" value={contractForm.ngay_vao_lam} onChange={(e) => setContractForm((p) => ({ ...p, ngay_vao_lam: e.target.value }))} />
+                  </Field>
+                  <Field label="Ngày hết hạn hợp đồng">
+                    <input type="date" value={contractForm.ngay_het_han_hop_dong} onChange={(e) => setContractForm((p) => ({ ...p, ngay_het_han_hop_dong: e.target.value }))} />
+                  </Field>
+                  <Field label="Người ký hợp đồng">
+                    <input value={contractForm.nguoi_ky_hop_dong} onChange={(e) => setContractForm((p) => ({ ...p, nguoi_ky_hop_dong: e.target.value }))} />
+                  </Field>
+                  <Field label="Ngày hết hạn chứng chỉ">
+                    <input type="date" value={contractForm.ngay_het_han_chung_chi} onChange={(e) => setContractForm((p) => ({ ...p, ngay_het_han_chung_chi: e.target.value }))} />
+                  </Field>
+                  <Field label="Vị trí công tác">
+                    <input value={contractForm.vi_tri_cong_tac} onChange={(e) => setContractForm((p) => ({ ...p, vi_tri_cong_tac: e.target.value }))} />
+                  </Field>
+                  <div style={{ gridColumn: "span 3" }}>
+                    <Field label="Địa chỉ">
+                      <input value={contractForm.dia_chi} onChange={(e) => setContractForm((p) => ({ ...p, dia_chi: e.target.value }))} />
+                    </Field>
+                  </div>
+                  <div style={{ gridColumn: "span 3" }}>
+                    <Field label="Ghi chú">
+                      <textarea
+                        rows={2}
+                        value={contractForm.ghi_chu}
+                        onChange={(e) => setContractForm((p) => ({ ...p, ghi_chu: e.target.value }))}
+                        style={{ width: "100%", resize: "vertical" }}
+                      />
+                    </Field>
+                  </div>
+                </div>
+                <div style={{ padding: "12px 20px 20px", display: "flex", justifyContent: "flex-end", gap: "8px", borderTop: "1px solid #F3F4F6" }}>
+                  <button type="button" className="ghost-button" style={{ border: "1px solid #D1D5DB" }} onClick={() => setHoSoFormModal(null)}>
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => (hoSoFormModal === "add" ? createContract() : updateContract())}
+                  >
+                    {hoSoFormModal === "add" ? "Thêm mới" : "Cập nhật"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {hoSoDetailRow && (
+            <div
+              role="presentation"
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(15, 23, 42, 0.45)",
+                zIndex: 1001,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px",
+              }}
+              onClick={() => setHoSoDetailRow(null)}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                style={{
+                  background: "#fff",
+                  borderRadius: "12px",
+                  border: "1px solid #E5E7EB",
+                  maxWidth: "480px",
+                  width: "100%",
+                  maxHeight: "85vh",
+                  overflow: "auto",
+                  boxShadow: "0 20px 50px rgba(0,0,0,0.15)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h3 style={{ margin: 0, fontSize: "1rem", color: "#111827" }}>Chi tiết hồ sơ bác sĩ</h3>
+                  <button type="button" className="ghost-button" style={{ border: "1px solid #D1D5DB" }} onClick={() => setHoSoDetailRow(null)}>
+                    Đóng
+                  </button>
+                </div>
+                <div style={{ padding: "16px 20px 20px", fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {[
+                    ["Họ tên", hoSoDetailRow.ho_ten],
+                    ["Mã bác sĩ", hoSoDetailRow.doctor_id],
+                    ["Giới tính", GENDER_LABELS[hoSoDetailRow.gioi_tinh] || dash(hoSoDetailRow.gioi_tinh)],
+                    ["Ngày sinh", dash(hoSoDetailRow.ngay_sinh)],
+                    ["Địa chỉ", dash(hoSoDetailRow.dia_chi)],
+                    ["Số CCCD", hoSoDetailRow.so_cccd],
+                    ["Số điện thoại", dash(hoSoDetailRow.so_dien_thoai)],
+                    ["Email liên hệ", dash(hoSoDetailRow.email_lien_he)],
+                    ["Ngày vào làm", dash(hoSoDetailRow.ngay_vao_lam)],
+                    ["Ngày hết hạn hợp đồng", dash(hoSoDetailRow.ngay_het_han_hop_dong)],
+                    ["Người ký hợp đồng", dash(hoSoDetailRow.nguoi_ky_hop_dong)],
+                    ["Ngày hết hạn chứng chỉ", dash(hoSoDetailRow.ngay_het_han_chung_chi)],
+                    ["Vị trí công tác", dash(hoSoDetailRow.vi_tri_cong_tac)],
+                    ["Ghi chú", dash(hoSoDetailRow.ghi_chu)],
+                  ].map(([label, val]) => (
+                    <div key={label} style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "10px", alignItems: "start" }}>
+                      <span style={{ color: "#6B7280" }}>{label}</span>
+                      <span style={{ wordBreak: "break-word", color: "#111827" }}>{val ?? "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

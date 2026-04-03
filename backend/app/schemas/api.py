@@ -157,6 +157,23 @@ class HolidayPayload(BaseModel):
     is_active: bool = True
 
 
+class DoctorProfilePayload(BaseModel):
+    doctor_id: int
+    ho_ten: str = Field(min_length=1, max_length=100)
+    ngay_sinh: date | None = None
+    gioi_tinh: str | None = None
+    dia_chi: str | None = None
+    so_cccd: str = Field(min_length=2, max_length=20)
+    so_dien_thoai: str | None = Field(default=None, max_length=15)
+    email_lien_he: str | None = Field(default=None, max_length=150)
+    ngay_vao_lam: date
+    ngay_het_han_hop_dong: date | None = None
+    nguoi_ky_hop_dong: str | None = Field(default=None, max_length=100)
+    ngay_het_han_chung_chi: date | None = None
+    vi_tri_cong_tac: str | None = Field(default=None, max_length=100)
+    ghi_chu: str | None = None
+
+
 class ServiceCreate(BaseModel):
     name: str
     category: str | None = None
@@ -306,6 +323,10 @@ class InvoicePayPayload(BaseModel):
     notes: str | None = None
 
 
+class PrescriptionCheckoutPayload(BaseModel):
+    payment_method: str
+
+
 class RefundPayload(BaseModel):
     amount: float = Field(gt=0)
     reason: str
@@ -331,6 +352,7 @@ class AppointmentView(ORMBase):
     chief_complaint: str | None = None
     notes: str | None = None
     proposal: dict[str, Any] | None = None
+    services: list[dict[str, Any]] | None = None
     created_at: datetime
 
 

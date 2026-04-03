@@ -1,4 +1,4 @@
-
+from datetime import date, datetime
 
 import enum
 
@@ -214,6 +214,36 @@ class Doctor(Base):
     bio: Mapped[str | None] = mapped_column("gioi_thieu", Text)
     is_available: Mapped[bool] = mapped_column("dang_nhan_kham", Boolean, default=True)
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
+
+
+class DoctorProfile(Base):
+    __tablename__ = "ho_so_bac_si"
+
+    id: Mapped[int] = mapped_column("ma_ho_so_bac_si", Integer, primary_key=True, autoincrement=True)
+    doctor_id: Mapped[int] = mapped_column(
+        "ma_bac_si",
+        ForeignKey("bac_si.ma_bac_si", ondelete="CASCADE"),
+        unique=True,
+    )
+    full_name: Mapped[str] = mapped_column("ho_ten", String(100))
+    birth_date: Mapped[date | None] = mapped_column("ngay_sinh", Date, nullable=True)
+    gender: Mapped[GenderEnum | None] = mapped_column(
+        "gioi_tinh",
+        DBEnum(GenderEnum, {"male": "nam", "female": "nu", "other": "khac"}),
+        nullable=True,
+    )
+    address: Mapped[str | None] = mapped_column("dia_chi", Text)
+    citizen_id: Mapped[str] = mapped_column("so_cccd", String(20))
+    phone: Mapped[str | None] = mapped_column("so_dien_thoai", String(15))
+    contact_email: Mapped[str | None] = mapped_column("email_lien_he", String(150))
+    start_work_date: Mapped[date] = mapped_column("ngay_vao_lam", Date)
+    contract_end_date: Mapped[date | None] = mapped_column("ngay_het_han_hop_dong", Date)
+    contract_signatory: Mapped[str | None] = mapped_column("nguoi_ky_hop_dong", String(100))
+    license_expiry_date: Mapped[date | None] = mapped_column("ngay_het_han_chung_chi", Date)
+    position: Mapped[str | None] = mapped_column("vi_tri_cong_tac", String(100))
+    notes: Mapped[str | None] = mapped_column("ghi_chu", Text)
+    created_at: Mapped[datetime] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column("cap_nhat_luc", DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class DoctorSchedule(Base):
@@ -526,3 +556,5 @@ class Supplier(Base):
     is_active: Mapped[bool] = mapped_column("dang_hop_tac", Boolean, default=True)
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[str] = mapped_column("cap_nhat_luc", DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+

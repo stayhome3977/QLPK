@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
@@ -8,6 +9,7 @@ from app.seed import seed_defaults
 from app.websocket.manager import manager
 
 app = FastAPI(title=settings.APP_NAME)
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,10 +22,18 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:  # noqa: BLE001
+        # Existing MySQL schemas created by legacy SQL scripts can have signed/unsigned
+        # mismatches that break SQLAlchemy auto-DDL. Keep API booting instead of crashing.
+        logger.warning("Skipping automatic schema sync due to DDL error: %s", exc)
     db = SessionLocal()
     try:
-        seed_defaults(db, settings.DEFAULT_ADMIN_EMAIL, settings.DEFAULT_ADMIN_PASSWORD)
+        try:
+            seed_defaults(db, settings.DEFAULT_ADMIN_EMAIL, settings.DEFAULT_ADMIN_PASSWORD)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Skipping default seed due to schema mismatch: %s", exc)
     finally:
         db.close()
 

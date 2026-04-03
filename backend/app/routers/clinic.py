@@ -3,8 +3,8 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from reportlab.pdfgen import canvas
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, text
+from sqlalchemy.orm import Session, aliased
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
@@ -16,6 +16,7 @@ from app.models.entities import (
     BookingSource,
     ClinicHoliday,
     Doctor,
+    DoctorProfile,
     DoctorBusySlot,
     DoctorLeave,
     DoctorSchedule,
@@ -69,7 +70,9 @@ from app.schemas.api import (
     NotificationView,
     PatientUpdate,
     PrescriptionCreate,
+    PrescriptionCheckoutPayload,
     QuickPatientCreate,
+    DoctorProfilePayload,
     RefundPayload,
     ReschedulePayload,
     RescheduleProposalPayload,
@@ -96,6 +99,7 @@ def serialize_user(user: User | None) -> dict | None:
         "full_name": user.full_name,
         "phone": user.phone,
         "role": user.role.value,
+        "is_active": user.is_active,
     }
 
 
@@ -197,6 +201,20 @@ def serialize_appointment(db: Session, appointment: Appointment) -> dict:
     doctor = get_doctor_or_404(db, appointment.doctor_id)
     doctor_user = db.query(User).filter(User.id == doctor.user_id).first()
     patient_user = db.query(User).filter(User.id == patient.user_id).first() if patient.user_id else None
+    
+    appointment_services = db.query(AppointmentService).filter(AppointmentService.appointment_id == appointment.id).all()
+    services_list = []
+    for apt_srv in appointment_services:
+        svc = db.query(Service).filter(Service.id == apt_srv.service_id).first()
+        if svc:
+            services_list.append(
+                {
+                    "service_id": svc.id,
+                    "name": svc.name,
+                    "quantity": apt_srv.quantity,
+                }
+            )
+
     return {
         "id": appointment.id,
         "patient_id": appointment.patient_id,
@@ -223,6 +241,7 @@ def serialize_appointment(db: Session, appointment: Appointment) -> dict:
             if appointment.proposed_date and appointment.proposed_time
             else None
         ),
+        "services": services_list,
         "created_at": appointment.created_at,
     }
 
@@ -237,7 +256,27 @@ def map_gender(value: str | None):
     return GenderEnum(value) if value in GenderEnum._value2member_map_ else None
 
 
+def ensure_clinic_holiday_table(db: Session) -> None:
+    """
+    Keep holidays endpoints resilient when DB was initialized from a partial SQL script.
+    """
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS ngay_nghi_phong_kham (
+                ma_ngay_nghi_phong INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                ngay_nghi DATE NOT NULL UNIQUE,
+                ten_ngay_nghi VARCHAR(100) NOT NULL,
+                dang_ap_dung TINYINT(1) NOT NULL DEFAULT 1
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """
+        )
+    )
+    db.commit()
+
+
 def get_available_slots_logic(db: Session, doctor_id: int, selected_date: date) -> list[dict]:
+    ensure_clinic_holiday_table(db)
     holiday = db.query(ClinicHoliday).filter(ClinicHoliday.holiday_date == selected_date, ClinicHoliday.is_active.is_(True)).first()
     leave = db.query(DoctorLeave).filter(DoctorLeave.doctor_id == doctor_id, DoctorLeave.leave_date == selected_date).first()
     if holiday or leave:
@@ -371,6 +410,76 @@ def serialize_invoice(db: Session, invoice: Invoice) -> dict:
         "items": invoice_items_payload(db, invoice.id),
         "transactions": transactions_payload(db, invoice.id),
     }
+
+
+def serialize_doctor_paid_invoice_summary(db: Session, invoice: Invoice) -> dict:
+    patient = db.query(Patient).filter(Patient.id == invoice.patient_id).first()
+    patient_user = db.query(User).filter(User.id == patient.user_id).first() if patient and patient.user_id else None
+    patient_name = patient_user.full_name if patient_user else (f"BN {patient.patient_code}" if patient else "—")
+    appointment = db.query(Appointment).filter(Appointment.id == invoice.appointment_id).first()
+    cashier = db.query(User).filter(User.id == invoice.cashier_id).first() if invoice.cashier_id else None
+    return {
+        "id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "appointment_id": invoice.appointment_id,
+        "patient_id": invoice.patient_id,
+        "patient_name": patient_name,
+        "patient_code": patient.patient_code if patient else None,
+        "patient_phone": patient_user.phone if patient_user else None,
+        "appointment_date": appointment.appointment_date.isoformat() if appointment and appointment.appointment_date else None,
+        "appointment_time": str(appointment.appointment_time) if appointment and appointment.appointment_time else None,
+        "total_amount": float(invoice.total_amount),
+        "paid_amount": float(invoice.paid_amount),
+        "payment_status": invoice.payment_status.value,
+        "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+        "pharmacist_name": cashier.full_name if cashier else None,
+        "notes": invoice.notes,
+    }
+
+
+def _gender_from_payload(value: str | None) -> GenderEnum | None:
+    if not value:
+        return None
+    try:
+        return GenderEnum(value)
+    except ValueError:
+        return None
+
+
+def serialize_doctor_profile(profile: DoctorProfile) -> dict:
+    return {
+        "id": profile.id,
+        "doctor_id": profile.doctor_id,
+        "ho_ten": profile.full_name,
+        "ngay_sinh": profile.birth_date.isoformat() if profile.birth_date else None,
+        "gioi_tinh": profile.gender.value if profile.gender else None,
+        "dia_chi": profile.address,
+        "so_cccd": profile.citizen_id,
+        "so_dien_thoai": profile.phone,
+        "email_lien_he": profile.contact_email,
+        "ngay_vao_lam": profile.start_work_date.isoformat() if profile.start_work_date else None,
+        "ngay_het_han_hop_dong": profile.contract_end_date.isoformat() if profile.contract_end_date else None,
+        "nguoi_ky_hop_dong": profile.contract_signatory,
+        "ngay_het_han_chung_chi": profile.license_expiry_date.isoformat() if profile.license_expiry_date else None,
+        "vi_tri_cong_tac": profile.position,
+        "ghi_chu": profile.notes,
+    }
+
+
+def _apply_doctor_profile_payload(profile: DoctorProfile, payload: DoctorProfilePayload) -> None:
+    profile.full_name = payload.ho_ten
+    profile.birth_date = payload.ngay_sinh
+    profile.gender = _gender_from_payload(payload.gioi_tinh)
+    profile.address = payload.dia_chi
+    profile.citizen_id = payload.so_cccd
+    profile.phone = payload.so_dien_thoai
+    profile.contact_email = payload.email_lien_he
+    profile.start_work_date = payload.ngay_vao_lam
+    profile.contract_end_date = payload.ngay_het_han_hop_dong
+    profile.contract_signatory = payload.nguoi_ky_hop_dong
+    profile.license_expiry_date = payload.ngay_het_han_chung_chi
+    profile.position = payload.vi_tri_cong_tac
+    profile.notes = payload.ghi_chu
 
 
 def ensure_invoice_editable(db: Session, appointment_id: int) -> None:
@@ -512,6 +621,17 @@ def list_patients(db: Session = Depends(get_db), current_user: User = Depends(re
     return [serialize_patient(db, item) for item in db.query(Patient).order_by(Patient.id.desc()).all()]
 
 
+@router.get("/api/v1/patients/me")
+def get_my_patient_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["patient"])),
+):
+    patient = db.query(Patient).filter(Patient.user_id == current_user.id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+    return serialize_patient(db, patient)
+
+
 @router.get("/api/v1/patients/{patient_id}")
 def get_patient(patient_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return serialize_patient(db, get_patient_or_404(db, patient_id))
@@ -618,6 +738,47 @@ def get_doctor_schedule(doctor_id: int, db: Session = Depends(get_db)):
         }
         for item in schedules
     ]
+
+
+@router.get("/api/v1/doctors/me/paid-invoices")
+def list_doctor_pharmacist_paid_invoices(
+    q: str | None = Query(None, description="Tìm theo tên BN, SĐT, mã BN, số hóa đơn"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["doctor"])),
+):
+    """Phiếu/hóa đơn đã thanh toán đủ qua tài khoản dược sĩ (lịch hẹn của bác sĩ hiện tại)."""
+    doctor = db.query(Doctor).filter(Doctor.user_id == current_user.id).first()
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor profile not found")
+
+    cashier_user = aliased(User)
+    query = (
+        db.query(Invoice)
+        .join(Appointment, Invoice.appointment_id == Appointment.id)
+        .join(cashier_user, Invoice.cashier_id == cashier_user.id)
+        .filter(Appointment.doctor_id == doctor.id)
+        .filter(Invoice.payment_status.in_([PaymentStatus.paid, PaymentStatus.credit_approved]))
+        .filter(cashier_user.role == RoleEnum.pharmacist)
+    )
+
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        patient_user = aliased(User)
+        query = (
+            query.join(Patient, Invoice.patient_id == Patient.id)
+            .outerjoin(patient_user, Patient.user_id == patient_user.id)
+            .filter(
+                or_(
+                    Patient.patient_code.ilike(term),
+                    Invoice.invoice_number.ilike(term),
+                    patient_user.full_name.ilike(term),
+                    patient_user.phone.ilike(term),
+                )
+            )
+        )
+
+    rows = query.order_by(Invoice.paid_at.desc().nullslast(), Invoice.id.desc()).all()
+    return [serialize_doctor_paid_invoice_summary(db, inv) for inv in rows]
 
 
 @router.post("/api/v1/admin/doctors/{doctor_id}/schedule")
@@ -737,6 +898,7 @@ def delete_doctor_leave(
 
 @router.get("/api/v1/holidays")
 def list_holidays(db: Session = Depends(get_db)):
+    ensure_clinic_holiday_table(db)
     return [
         {"id": item.id, "holiday_date": item.holiday_date, "name": item.name, "is_active": item.is_active}
         for item in db.query(ClinicHoliday).order_by(ClinicHoliday.holiday_date.asc()).all()
@@ -749,6 +911,7 @@ def create_holiday(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["admin"])),
 ):
+    ensure_clinic_holiday_table(db)
     holiday = ClinicHoliday(**payload.model_dump())
     db.add(holiday)
     db.commit()
@@ -762,6 +925,7 @@ def update_holiday(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["admin"])),
 ):
+    ensure_clinic_holiday_table(db)
     holiday = db.query(ClinicHoliday).filter(ClinicHoliday.id == holiday_id).first()
     if not holiday:
         raise HTTPException(status_code=404, detail="Holiday not found")
@@ -774,6 +938,7 @@ def update_holiday(
 
 @router.delete("/api/v1/holidays/{holiday_id}")
 def delete_holiday(holiday_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+    ensure_clinic_holiday_table(db)
     holiday = db.query(ClinicHoliday).filter(ClinicHoliday.id == holiday_id).first()
     if not holiday:
         raise HTTPException(status_code=404, detail="Holiday not found")
@@ -1014,6 +1179,39 @@ def reschedule_appointment(
     appointment = get_appointment_or_404(db, appointment_id)
     if appointment.status not in {AppointmentStatus.pending, AppointmentStatus.confirmed}:
         raise HTTPException(status_code=400, detail="Appointment cannot be rescheduled")
+
+    # Handle patient accepting doctor's proposal
+    proposed_time_str = None
+    if appointment.proposed_time is not None:
+        try:
+            proposed_time_str = appointment.proposed_time.strftime("%H:%M")
+        except AttributeError:
+            secs = int(appointment.proposed_time.total_seconds())
+            proposed_time_str = f"{secs // 3600:02d}:{(secs % 3600) // 60:02d}"
+
+    if (
+        appointment.proposed_date
+        and appointment.proposed_date == payload.appointment_date
+        and proposed_time_str
+        and proposed_time_str == payload.appointment_time.strftime("%H:%M")
+    ):
+        # Doctor explicitly proposed and approved this time, skip strict available slots logic
+        appointment.appointment_date = payload.appointment_date
+        appointment.appointment_time = payload.appointment_time
+        appointment.status = AppointmentStatus.confirmed
+        appointment.proposed_date = None
+        appointment.proposed_time = None
+        if payload.reason:
+            appointment.notes = f"{appointment.notes or ''}\n[BN chốt: {payload.reason}]".strip()
+        db.commit()
+        return serialize_appointment(db, appointment)
+
+    appointment.status = AppointmentStatus.cancelled
+    appointment.cancel_reason = payload.reason or "rescheduled"
+    appointment.cancelled_by = current_user.id
+    appointment.cancelled_at = utcnow()
+    db.flush()
+
     new_payload = AppointmentCreate(
         patient_id=appointment.patient_id,
         doctor_id=appointment.doctor_id,
@@ -1027,10 +1225,9 @@ def reschedule_appointment(
     )
     new_appointment = build_appointment(db, appointment.patient_id, new_payload, current_user, appointment.visit_type, appointment.booking_source)
     new_appointment.rescheduled_from_id = appointment.id
-    appointment.status = AppointmentStatus.cancelled
-    appointment.cancel_reason = payload.reason or "rescheduled"
-    appointment.cancelled_by = current_user.id
-    appointment.cancelled_at = utcnow()
+    # Copy discount mapping from old appointment to retain the discount proposed
+    new_appointment.discount_percent = appointment.discount_percent
+    new_appointment.discount_note = appointment.discount_note
     db.commit()
     return serialize_appointment(db, new_appointment)
 
@@ -1179,18 +1376,28 @@ def create_prescription(payload: PrescriptionCreate, db: Session = Depends(get_d
 @router.get("/api/v1/prescriptions")
 def list_prescriptions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     items = db.query(Prescription).order_by(Prescription.created_at.desc()).all()
-    return [
-        {
-            "id": item.id,
-            "medical_record_id": item.medical_record_id,
-            "patient_id": item.patient_id,
-            "doctor_id": item.doctor_id,
-            "status": item.status.value,
-            "prepared_at": item.prepared_at,
-            "dispensed_at": item.dispensed_at,
-        }
-        for item in items
-    ]
+    result: list[dict] = []
+    for item in items:
+        patient = db.query(Patient).filter(Patient.id == item.patient_id).first()
+        patient_user = db.query(User).filter(User.id == patient.user_id).first() if patient and patient.user_id else None
+        doctor = db.query(Doctor).filter(Doctor.id == item.doctor_id).first()
+        doctor_user = db.query(User).filter(User.id == doctor.user_id).first() if doctor else None
+
+        result.append(
+            {
+                "id": item.id,
+                "medical_record_id": item.medical_record_id,
+                "patient_id": item.patient_id,
+                "doctor_id": item.doctor_id,
+                "patient_name": patient_user.full_name if patient_user else f"BN #{item.patient_id}",
+                "doctor_name": doctor_user.full_name if doctor_user else None,
+                "status": item.status.value,
+                "prepared_at": item.prepared_at,
+                "dispensed_at": item.dispensed_at,
+            }
+        )
+
+    return result
 
 
 @router.get("/api/v1/prescriptions/{prescription_id}")
@@ -1223,6 +1430,98 @@ def get_prescription(prescription_id: int, db: Session = Depends(get_db), curren
             for item in items
         ],
     }
+
+
+@router.post("/api/v1/prescriptions/{prescription_id}/checkout")
+def checkout_prescription(
+    prescription_id: int,
+    payload: PrescriptionCheckoutPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["pharmacist", "admin"])),
+):
+    prescription = db.query(Prescription).filter(Prescription.id == prescription_id).first()
+    if not prescription:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
+    medical_record = db.query(MedicalRecord).filter(MedicalRecord.id == prescription.medical_record_id).first()
+    if not medical_record:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+
+    appointment_id = medical_record.appointment_id
+    invoice = db.query(Invoice).filter(Invoice.appointment_id == appointment_id).first()
+
+    if not invoice:
+        invoice = Invoice(
+            appointment_id=appointment_id,
+            patient_id=prescription.patient_id,
+            cashier_id=current_user.id,
+            invoice_number=generate_invoice_number(db),
+            invoice_status=InvoiceStatus.draft,
+            payment_status=PaymentStatus.unpaid,
+        )
+        db.add(invoice)
+        db.flush()
+
+    if invoice.invoice_status == InvoiceStatus.draft:
+        db.query(InvoiceItem).filter(InvoiceItem.invoice_id == invoice.id).delete()
+        items = db.query(PrescriptionItem).filter(PrescriptionItem.prescription_id == prescription.id).all()
+
+        subtotal = 0.0
+        for item in items:
+            billed_qty = item.reserved_quantity or item.quantity
+            line_total = float(item.unit_price) * billed_qty
+            subtotal += line_total
+            medicine = db.query(Medicine).filter(Medicine.id == item.medicine_id).first()
+            db.add(
+                InvoiceItem(
+                    invoice_id=invoice.id,
+                    item_type="medicine",
+                    reference_id=item.id,
+                    description=medicine.name if medicine else f"Medicine {item.medicine_id}",
+                    quantity=billed_qty,
+                    unit_price=float(item.unit_price),
+                    line_total=line_total,
+                )
+            )
+
+        invoice.subtotal_amount = subtotal
+        invoice.discount_amount = 0
+        invoice.discount_reason = None
+        invoice.insurance_support_amount = 0
+        invoice.total_amount = max(0, subtotal)
+        invoice.notes = f"Phiếu đơn thuốc: #{prescription.id}"
+        db.flush()
+
+    remaining = float(invoice.total_amount) - float(invoice.paid_amount or 0)
+    if remaining <= 0:
+        return {"invoice_id": invoice.id, "invoice_number": invoice.invoice_number, "message": "Hóa đơn đã thanh toán"}
+
+    method = PaymentMethod(payload.payment_method)
+    tx_status = TransactionStatus.pending if method == PaymentMethod.transfer else TransactionStatus.success
+    tx_ref = f"QR-{invoice.invoice_number}" if method == PaymentMethod.transfer else None
+
+    db.add(
+        PaymentTransaction(
+            invoice_id=invoice.id,
+            transaction_type=TransactionType.payment,
+            payment_method=method,
+            amount=remaining,
+            transaction_ref=tx_ref,
+            status=tx_status,
+            created_by=current_user.id,
+            paid_at=utcnow() if tx_status == TransactionStatus.success else None,
+        )
+    )
+
+    invoice.invoice_status = InvoiceStatus.issued
+    if tx_status == TransactionStatus.pending:
+        invoice.payment_status = PaymentStatus.awaiting_confirmation
+    else:
+        sync_invoice_payment_status(invoice, db)
+
+    db.commit()
+
+    return {"invoice_id": invoice.id, "invoice_number": invoice.invoice_number}
 
 
 @router.patch("/api/v1/prescriptions/{prescription_id}/prepare")
@@ -1503,7 +1802,14 @@ def generate_invoice(
 
 @router.get("/api/v1/invoices")
 def list_invoices(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    items = db.query(Invoice).order_by(Invoice.created_at.desc()).all()
+    query = db.query(Invoice)
+    if current_user.role == RoleEnum.patient:
+        patient = db.query(Patient).filter(Patient.user_id == current_user.id).first()
+        if patient:
+            query = query.filter(Invoice.patient_id == patient.id)
+        else:
+            query = query.filter(Invoice.patient_id == 0)
+    items = query.order_by(Invoice.created_at.desc()).all()
     return [serialize_invoice(db, item) for item in items]
 
 
@@ -1618,7 +1924,9 @@ def invoice_pdf(invoice_id: int, db: Session = Depends(get_db), current_user: Us
     pdf.drawString(50, 800, f"Invoice: {invoice.invoice_number}")
     pdf.drawString(50, 780, f"Status: {invoice.invoice_status.value}")
     pdf.drawString(50, 760, f"Total: {float(invoice.total_amount):,.0f} VND")
-    y = 730
+    if invoice.notes:
+        pdf.drawString(50, 740, str(invoice.notes)[:120])
+    y = 720
     for item in invoice_items_payload(db, invoice.id):
         pdf.drawString(50, y, f"- {item['description']} x{item['quantity']} = {item['line_total']:,.0f}")
         y -= 18
@@ -1772,6 +2080,99 @@ def delete_account(user_id: int, db: Session = Depends(get_db), current_user: Us
         db.rollback()
         raise HTTPException(status_code=400, detail="Không thể xóa tài khoản đã có dữ liệu liên kết. Vui lòng khóa tài khoản thay vì xóa.")
     return {"message": "Đã xóa tài khoản"}
+
+
+@router.get("/api/v1/admin/contracts")
+def list_contracts(db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+    rows = db.query(DoctorProfile).order_by(DoctorProfile.updated_at.desc()).all()
+    return [serialize_doctor_profile(item) for item in rows]
+
+
+@router.post("/api/v1/admin/contracts")
+def create_contract(
+    payload: DoctorProfilePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    doctor = db.query(Doctor).filter(Doctor.id == payload.doctor_id).first()
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bác sĩ")
+    if db.query(DoctorProfile).filter(DoctorProfile.doctor_id == payload.doctor_id).first():
+        raise HTTPException(status_code=400, detail="Bác sĩ này đã có hồ sơ")
+    dup_cccd = db.query(DoctorProfile).filter(DoctorProfile.citizen_id == payload.so_cccd).first()
+    if dup_cccd:
+        raise HTTPException(status_code=400, detail="Số CCCD đã tồn tại")
+    profile = DoctorProfile(doctor_id=payload.doctor_id)
+    _apply_doctor_profile_payload(profile, payload)
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return {"message": "Đã thêm hồ sơ bác sĩ", "id": profile.id}
+
+
+@router.put("/api/v1/admin/contracts/{contract_id}")
+def update_contract(
+    contract_id: int,
+    payload: DoctorProfilePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    profile = db.query(DoctorProfile).filter(DoctorProfile.id == contract_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ bác sĩ")
+    dup_cccd = db.query(DoctorProfile).filter(DoctorProfile.citizen_id == payload.so_cccd, DoctorProfile.id != contract_id).first()
+    if dup_cccd:
+        raise HTTPException(status_code=400, detail="Số CCCD đã tồn tại")
+    if payload.doctor_id != profile.doctor_id:
+        doctor = db.query(Doctor).filter(Doctor.id == payload.doctor_id).first()
+        if not doctor:
+            raise HTTPException(status_code=404, detail="Không tìm thấy bác sĩ")
+        taken = db.query(DoctorProfile).filter(DoctorProfile.doctor_id == payload.doctor_id, DoctorProfile.id != contract_id).first()
+        if taken:
+            raise HTTPException(status_code=400, detail="Bác sĩ đích đã có hồ sơ khác")
+        profile.doctor_id = payload.doctor_id
+    _apply_doctor_profile_payload(profile, payload)
+    db.commit()
+    return {"message": "Đã cập nhật hồ sơ bác sĩ"}
+
+
+@router.delete("/api/v1/admin/contracts/{contract_id}")
+def delete_contract(
+    contract_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin"])),
+):
+    profile = db.query(DoctorProfile).filter(DoctorProfile.id == contract_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ bác sĩ")
+    db.delete(profile)
+    db.commit()
+    return {"message": "Đã xóa hồ sơ bác sĩ"}
+
+
+@router.get("/api/v1/admin/contracts/pdf")
+def export_contracts_pdf(db: Session = Depends(get_db), current_user: User = Depends(require_role(["admin"]))):
+    rows = db.query(DoctorProfile).order_by(DoctorProfile.updated_at.desc()).all()
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer)
+    pdf.setTitle("Danh_sach_ho_so_bac_si")
+    pdf.drawString(50, 810, "DANH SACH HO SO BAC SI")
+    y = 790
+    for idx, item in enumerate(rows, start=1):
+        end_hd = item.contract_end_date.isoformat() if item.contract_end_date else "N/A"
+        row = f"{idx}. {item.full_name} | CCCD {item.citizen_id} | Vao lam: {item.start_work_date} | Het han HD: {end_hd} | {item.position or '-'}"
+        pdf.drawString(50, y, row[:120])
+        y -= 18
+        if y < 60:
+            pdf.showPage()
+            y = 810
+    pdf.save()
+    buffer.seek(0)
+    return Response(
+        buffer.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=danh_sach_ho_so_bac_si.pdf"},
+    )
 
 
 @router.get("/api/v1/suppliers")

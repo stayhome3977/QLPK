@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../../api/http";
 import { Alert, EmptyState, Field, Panel } from "../../components/shared/UI";
-import { currency, INVOICE_STATUS_LABELS, PRESCRIPTION_STATUS_LABELS } from "../../utils/helpers";
+import { currency, PRESCRIPTION_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "../../utils/helpers";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -276,56 +276,117 @@ function TabNhaCungCap({ loading, suppliers, reload }) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   TAB: Hóa đơn — Danh sách + Tạo + Xuất PDF
+   TAB: Hóa đơn & thanh toán nhanh
    ═══════════════════════════════════════════════════════ */
-function TabHoaDon({ loading, invoices, completedAppts, reload }) {
-  const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ appointment_id: "", discount_amount: 0, discount_reason: "", insurance_support_amount: 0, notes: "" });
-  const [detailInvoice, setDetailInvoice] = useState(null);
-  const [creating, setCreating] = useState(false);
+function TabHoaDon({ loading, prescriptions, medicines, invoices, reload }) {
+  const [activeRx, setActiveRx] = useState(null);
+  const [rxDetails, setRxDetails] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [confirmingInvoiceId, setConfirmingInvoiceId] = useState(null);
 
-  const createInvoice = async () => {
-    if (!createForm.appointment_id) { setError("Vui lòng chọn lịch khám"); return; }
-    setCreating(true); setError("");
-    try {
-      await api.post(`/api/v1/invoices/generate/${createForm.appointment_id}`, {
-        discount_amount: Number(createForm.discount_amount),
-        discount_reason: createForm.discount_reason,
-        insurance_support_amount: Number(createForm.insurance_support_amount),
-        notes: createForm.notes,
-      });
-      await reload(); setShowCreate(false);
-    } catch (e) { setError(e.response?.data?.detail || "Tạo hóa đơn thất bại"); }
-    setCreating(false);
+  const openPdf = (invoiceId) => {
+    window.open(`${API_BASE}/api/v1/invoices/${invoiceId}/pdf`, "_blank");
   };
 
-  const openPdf = (id) => { window.open(`${API_BASE}/api/v1/invoices/${id}/pdf`, "_blank"); };
+  const payablePrescriptions = (prescriptions || []).filter((rx) => ["pending", "prepared", "awaiting_payment"].includes(rx.status));
+
+  const waitingInvoices = (invoices || []).filter((inv) =>
+    ["unpaid", "awaiting_confirmation", "partial"].includes(inv.payment_status)
+  );
+
+  const openCheckoutModal = async (rx) => {
+    setActiveRx(rx);
+    setRxDetails(null);
+    setPaymentMethod("cash");
+    setError("");
+    try {
+      const { data } = await api.get(`/api/v1/prescriptions/${rx.id}`);
+      setRxDetails(data);
+    } catch (e) {
+      setError(e.response?.data?.detail || "Không thể tải chi tiết đơn thuốc");
+    }
+  };
+
+  const computedLines = (rxDetails?.items || []).map((it) => {
+    const med = medicines.find((m) => String(m.id) === String(it.medicine_id));
+    const billedQty = it.reserved_quantity || it.quantity;
+    const lineTotal = Number(it.unit_price || 0) * billedQty;
+    return {
+      medicineName: med?.name || `Thuốc #${it.medicine_id}`,
+      quantity: billedQty,
+      unitPrice: Number(it.unit_price || 0),
+      lineTotal,
+    };
+  });
+
+  const computedTotal = computedLines.reduce((sum, l) => sum + (l.lineTotal || 0), 0);
+
+  const checkoutAndExport = async () => {
+    if (!activeRx) return;
+    setSaving(true);
+    setError("");
+    try {
+      const { data } = await api.post(`/api/v1/prescriptions/${activeRx.id}/checkout`, { payment_method: paymentMethod });
+      await reload();
+      setActiveRx(null);
+      setRxDetails(null);
+      openPdf(data.invoice_id);
+    } catch (e) {
+      setError(e.response?.data?.detail || "Thanh toán thất bại");
+    }
+    setSaving(false);
+  };
+
+  const confirmInvoice = async (invoiceId) => {
+    setConfirmingInvoiceId(invoiceId);
+    try {
+      await api.patch(`/api/v1/invoices/${invoiceId}/confirm-transfer`);
+      await reload();
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert(e.response?.data?.detail || "Không thể xác nhận thanh toán");
+    } finally {
+      setConfirmingInvoiceId(null);
+    }
+  };
 
   return (
     <>
-      <Panel title="Danh sách hóa đơn">
+      <Panel title="Danh sách phiếu đơn thuốc cần thanh toán">
         <div className="pharm-toolbar">
-          <span className="pharm-count">{invoices.length} hóa đơn</span>
-          <button className="pharm-btn primary" onClick={() => { setShowCreate(true); setError(""); setCreateForm({ appointment_id: "", discount_amount: 0, discount_reason: "", insurance_support_amount: 0, notes: "" }); }}>+ Tạo hóa đơn</button>
+          <span className="pharm-count">{payablePrescriptions.length} phiếu</span>
         </div>
-        {loading ? <p>Đang tải...</p> : invoices.length === 0 ? <EmptyState text="Chưa có hóa đơn nào." /> : (
+        {loading ? (
+          <p>Đang tải...</p>
+        ) : payablePrescriptions.length === 0 ? (
+          <EmptyState text="Chưa có phiếu đơn thuốc cần thanh toán." />
+        ) : (
           <div className="pharm-table-wrap">
             <table className="pharm-table">
               <thead>
-                <tr><th>Số HĐ</th><th>Bệnh nhân</th><th>Tổng tiền</th><th>Đã trả</th><th>Trạng thái</th><th>Thao tác</th></tr>
+                <tr>
+                  <th>Mã phiếu</th>
+                  <th>Bệnh nhân</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
+                </tr>
               </thead>
               <tbody>
-                {invoices.map((inv) => (
-                  <tr key={inv.id}>
-                    <td><strong>{inv.invoice_number}</strong></td>
-                    <td>{inv.patient_name || `BN #${inv.patient_id}`}</td>
-                    <td>{currency(inv.total_amount)}</td>
-                    <td>{currency(inv.paid_amount || 0)}</td>
-                    <td><span className={`badge badge-${inv.invoice_status}`}>{INVOICE_STATUS_LABELS[inv.invoice_status] || inv.invoice_status}</span></td>
+                {payablePrescriptions.map((rx) => (
+                  <tr key={rx.id}>
+                    <td>
+                      <strong>#{rx.id}</strong>
+                    </td>
+                    <td>{rx.patient_name || `BN #${rx.patient_id}`}</td>
+                    <td>
+                      <span className={`badge badge-${rx.status}`}>{PRESCRIPTION_STATUS_LABELS[rx.status] || rx.status}</span>
+                    </td>
                     <td className="row-actions">
-                      <button className="pharm-btn secondary sm" onClick={() => setDetailInvoice(inv)}>Chi tiết</button>
-                      <button className="pharm-btn info sm" onClick={() => openPdf(inv.id)}>📄 PDF</button>
+                      <button className="pharm-btn primary sm" onClick={() => openCheckoutModal(rx)} disabled={saving}>
+                        Tạo hóa đơn
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -335,174 +396,149 @@ function TabHoaDon({ loading, invoices, completedAppts, reload }) {
         )}
       </Panel>
 
-      {/* Create Invoice Modal */}
-      {showCreate && (
-        <ModalForm title="Tạo hóa đơn từ lịch khám" onClose={() => setShowCreate(false)}>
-          <Field label="Lịch khám đã hoàn thành *">
-            <select value={createForm.appointment_id} onChange={(e) => setCreateForm((p) => ({ ...p, appointment_id: e.target.value }))}>
-              <option value="">Chọn lịch khám</option>
-              {(completedAppts || []).map((a) => (
-                <option key={a.id} value={a.id}>#{a.id} — {a.patient_name} — BS. {a.doctor_name} ({a.appointment_date})</option>
-              ))}
-            </select>
-          </Field>
-          <div className="pharm-form-grid">
-            <Field label="Giảm giá (VNĐ)"><input type="number" value={createForm.discount_amount} onChange={(e) => setCreateForm((p) => ({ ...p, discount_amount: e.target.value }))} /></Field>
-            <Field label="Hỗ trợ bảo hiểm (VNĐ)"><input type="number" value={createForm.insurance_support_amount} onChange={(e) => setCreateForm((p) => ({ ...p, insurance_support_amount: e.target.value }))} /></Field>
+      <Panel title="Danh sách chờ thanh toán">
+        {loading ? (
+          <p>Đang tải...</p>
+        ) : waitingInvoices.length === 0 ? (
+          <EmptyState text="Chưa có hóa đơn nào đang chờ thanh toán." />
+        ) : (
+          <div className="pharm-table-wrap">
+            <table className="pharm-table">
+              <thead>
+                <tr>
+                  <th>Mã HĐ</th>
+                  <th>Bệnh nhân</th>
+                  <th>Số tiền</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {waitingInvoices.map((inv) => (
+                  <tr key={inv.id}>
+                    <td>
+                      <strong>{inv.invoice_number}</strong>
+                    </td>
+                    <td>{inv.patient_id ? `BN #${inv.patient_id}` : "—"}</td>
+                    <td>{currency(inv.total_amount)}</td>
+                    <td>
+                      <span className={`badge badge-${inv.payment_status}`}>
+                        {inv.payment_status === "awaiting_confirmation"
+                          ? "Đang thanh toán"
+                          : PAYMENT_STATUS_LABELS[inv.payment_status] || inv.payment_status}
+                      </span>
+                    </td>
+                    <td className="row-actions">
+                      <button
+                        className="pharm-btn secondary sm"
+                        onClick={() => openPdf(inv.id)}
+                      >
+                        PDF
+                      </button>
+                      {inv.payment_status !== "paid" && (
+                        <button
+                          className="pharm-btn primary sm"
+                          onClick={() => confirmInvoice(inv.id)}
+                          disabled={confirmingInvoiceId === inv.id}
+                        >
+                          {confirmingInvoiceId === inv.id ? "Đang xác nhận..." : "Xác nhận đã thanh toán"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <Field label="Lý do giảm giá"><input value={createForm.discount_reason} onChange={(e) => setCreateForm((p) => ({ ...p, discount_reason: e.target.value }))} /></Field>
-          <Field label="Ghi chú hóa đơn"><textarea value={createForm.notes} onChange={(e) => setCreateForm((p) => ({ ...p, notes: e.target.value }))} rows={2} /></Field>
-          {error && <Alert type="error">{error}</Alert>}
-          <div className="pharm-modal-actions">
-            <button className="pharm-btn ghost" onClick={() => setShowCreate(false)}>Hủy</button>
-            <button className="pharm-btn primary" onClick={createInvoice} disabled={creating}>{creating ? "Đang tạo..." : "Tạo hóa đơn"}</button>
-          </div>
-        </ModalForm>
-      )}
+        )}
+      </Panel>
 
-      {/* Invoice Detail Modal */}
-      {detailInvoice && (
-        <ModalForm title={`Hóa đơn ${detailInvoice.invoice_number}`} onClose={() => setDetailInvoice(null)}>
+      {activeRx && (
+        <ModalForm title={`Phiếu #${activeRx.id} — Thanh toán`} onClose={() => { setActiveRx(null); setRxDetails(null); }}>
           <div className="invoice-detail-block">
-            <div className="invoice-detail-row"><span>Bệnh nhân</span><strong>{detailInvoice.patient_name || "—"}</strong></div>
-            <div className="invoice-detail-row"><span>Trạng thái</span><strong>{INVOICE_STATUS_LABELS[detailInvoice.invoice_status] || detailInvoice.invoice_status}</strong></div>
-            <div className="invoice-detail-row"><span>Tổng tiền</span><strong>{currency(detailInvoice.total_amount)}</strong></div>
-            <div className="invoice-detail-row"><span>Đã thanh toán</span><strong>{currency(detailInvoice.paid_amount || 0)}</strong></div>
-            <div className="invoice-detail-row"><span>Giảm giá</span><span>{currency(detailInvoice.discount_amount || 0)}</span></div>
-            <div className="invoice-detail-row"><span>Bảo hiểm</span><span>{currency(detailInvoice.insurance_support_amount || 0)}</span></div>
-            {detailInvoice.notes && <div className="invoice-detail-row"><span>Ghi chú</span><span>{detailInvoice.notes}</span></div>}
+            <div className="invoice-detail-row">
+              <span>Bệnh nhân</span>
+              <strong>{activeRx.patient_name || `BN #${activeRx.patient_id}`}</strong>
+            </div>
+            <div className="invoice-detail-row">
+              <span>Tổng tiền</span>
+              <strong>{currency(computedTotal)}</strong>
+            </div>
           </div>
-          {(detailInvoice.items || []).length > 0 && (
+
+          {!rxDetails ? (
+            <p>Đang tải chi tiết...</p>
+          ) : (
             <>
-              <h4 style={{ marginTop: "16px" }}>Các dịch vụ / thuốc</h4>
-              <table className="pharm-table">
-                <thead><tr><th>Mô tả</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
-                <tbody>
-                  {detailInvoice.items.map((item, i) => (
-                    <tr key={i}>
-                      <td>{item.description}</td>
-                      <td>{item.quantity}</td>
-                      <td>{currency(item.unit_price)}</td>
-                      <td>{currency(item.line_total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {computedLines.length > 0 && (
+                <>
+                  <h4 style={{ marginTop: "16px" }}>Tổng mỗi thuốc</h4>
+                  <table className="pharm-table">
+                    <thead>
+                      <tr><th>Thuốc</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr>
+                    </thead>
+                    <tbody>
+                      {computedLines.map((l, i) => (
+                        <tr key={i}>
+                          <td>{l.medicineName}</td>
+                          <td>{l.quantity}</td>
+                          <td>{currency(l.unitPrice)}</td>
+                          <td>{currency(l.lineTotal)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+              <div className="pharm-form-grid" style={{ marginTop: "16px" }}>
+                <Field label="Phương thức">
+                  <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                    <option value="cash">Tiền mặt</option>
+                    <option value="transfer">Chuyển khoản (QR giả)</option>
+                  </select>
+                </Field>
+              </div>
+
+              {paymentMethod === "transfer" && (
+                <div style={{ marginTop: "16px", textAlign: "center" }}>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      padding: "12px",
+                      borderRadius: "8px",
+                      border: "1px dashed #999",
+                      background: "#fafafa",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 140,
+                        height: 140,
+                        backgroundImage:
+                          "repeating-linear-gradient(45deg, #000, #000 4px, #fff 4px, #fff 8px)",
+                      }}
+                    />
+                    <small style={{ marginTop: 8 }}>Mã QR giả lập để thanh toán</small>
+                  </div>
+                </div>
+              )}
             </>
           )}
+
+          {error && <Alert type="error">{error}</Alert>}
           <div className="pharm-modal-actions">
-            <button className="pharm-btn info" onClick={() => openPdf(detailInvoice.id)}>📄 Xuất PDF</button>
-            <button className="pharm-btn ghost" onClick={() => setDetailInvoice(null)}>Đóng</button>
+            <button className="pharm-btn ghost" onClick={() => { setActiveRx(null); setRxDetails(null); }}>
+              Đóng
+            </button>
+            <button className="pharm-btn primary" onClick={checkoutAndExport} disabled={saving || !rxDetails}>
+              {saving ? "Đang xử lý..." : "Xuất hóa đơn ra PDF"}
+            </button>
           </div>
         </ModalForm>
       )}
     </>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════
-   TAB: Thanh toán
-   ═══════════════════════════════════════════════════════ */
-function TabThanhToan({ loading, invoices, reload }) {
-  const unpaidInvoices = invoices.filter((inv) => ["issued", "partially_paid", "draft"].includes(inv.invoice_status));
-  const [payForm, setPayForm] = useState({ invoice_id: "", amount: "", payment_method: "cash", transaction_ref: "" });
-  const [refundForm, setRefundForm] = useState({ invoice_id: "", amount: "", reason: "" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  const handlePay = async () => {
-    setSaving(true); setError(""); setSuccess("");
-    try {
-      await api.patch(`/api/v1/invoices/${payForm.invoice_id}/pay`, { amount: Number(payForm.amount), payment_method: payForm.payment_method, transaction_ref: payForm.transaction_ref });
-      setSuccess("Thu tiền thành công!"); setPayForm({ invoice_id: "", amount: "", payment_method: "cash", transaction_ref: "" }); await reload();
-    } catch (e) { setError(e.response?.data?.detail || "Thu tiền thất bại"); }
-    setSaving(false);
-  };
-
-  const handleConfirmTransfer = async (id) => {
-    await api.patch(`/api/v1/invoices/${id}/confirm-transfer`); await reload();
-  };
-
-  const handleRefund = async () => {
-    if (!refundForm.invoice_id) { setError("Chọn hóa đơn cần hoàn tiền"); return; }
-    setSaving(true); setError(""); setSuccess("");
-    try {
-      await api.post(`/api/v1/invoices/${refundForm.invoice_id}/refund`, { amount: Number(refundForm.amount), reason: refundForm.reason });
-      setSuccess("Hoàn tiền thành công!"); setRefundForm({ invoice_id: "", amount: "", reason: "" }); await reload();
-    } catch (e) { setError(e.response?.data?.detail || "Hoàn tiền thất bại"); }
-    setSaving(false);
-  };
-
-  const pendingTransfer = invoices.filter((inv) => inv.payment_status === "awaiting_confirmation");
-  const selectedInvoice = invoices.find((inv) => String(inv.id) === String(payForm.invoice_id));
-
-  return (
-    <div className="dashboard-sections two-columns">
-      {/* Thu tiền */}
-      <Panel title="Thu tiền">
-        <div className="form-stack">
-          <Field label="Chọn hóa đơn">
-            <select value={payForm.invoice_id} onChange={(e) => { const inv = invoices.find((i) => String(i.id) === e.target.value); setPayForm((p) => ({ ...p, invoice_id: e.target.value, amount: inv ? String(inv.total_amount - (inv.paid_amount || 0)) : "" })); }}>
-              <option value="">Chọn hóa đơn</option>
-              {unpaidInvoices.map((inv) => <option key={inv.id} value={inv.id}>{inv.invoice_number} — {inv.patient_name} — còn {currency((inv.total_amount || 0) - (inv.paid_amount || 0))}</option>)}
-            </select>
-          </Field>
-          {selectedInvoice && (
-            <div className="pharm-invoice-summary">
-              <span>Tổng: <strong>{currency(selectedInvoice.total_amount)}</strong></span>
-              <span>Đã trả: <strong>{currency(selectedInvoice.paid_amount || 0)}</strong></span>
-              <span>Còn lại: <strong>{currency((selectedInvoice.total_amount || 0) - (selectedInvoice.paid_amount || 0))}</strong></span>
-            </div>
-          )}
-          <Field label="Số tiền thu (VNĐ)"><input type="number" value={payForm.amount} onChange={(e) => setPayForm((p) => ({ ...p, amount: e.target.value }))} /></Field>
-          <Field label="Phương thức">
-            <select value={payForm.payment_method} onChange={(e) => setPayForm((p) => ({ ...p, payment_method: e.target.value }))}>
-              <option value="cash">Tiền mặt</option>
-              <option value="card">Thẻ ngân hàng</option>
-              <option value="transfer">Chuyển khoản</option>
-            </select>
-          </Field>
-          {payForm.payment_method === "transfer" && (
-            <Field label="Mã giao dịch CK"><input value={payForm.transaction_ref} onChange={(e) => setPayForm((p) => ({ ...p, transaction_ref: e.target.value }))} /></Field>
-          )}
-          {error && <Alert type="error">{error}</Alert>}
-          {success && <Alert type="success">{success}</Alert>}
-          <button className="pharm-btn primary fill" onClick={handlePay} disabled={saving || !payForm.invoice_id || !payForm.amount}>{saving ? "Đang xử lý..." : "Xác nhận thu tiền"}</button>
-        </div>
-      </Panel>
-
-      <div className="form-stack">
-        {/* Xác nhận chuyển khoản */}
-        {pendingTransfer.length > 0 && (
-          <Panel title="Chờ xác nhận chuyển khoản">
-            <div className="list-stack">
-              {pendingTransfer.map((inv) => (
-                <div key={inv.id} className="list-row">
-                  <div><strong>{inv.invoice_number}</strong><p>{inv.patient_name} — {currency(inv.total_amount)}</p></div>
-                  <button className="pharm-btn secondary sm" onClick={() => handleConfirmTransfer(inv.id)}>Xác nhận</button>
-                </div>
-              ))}
-            </div>
-          </Panel>
-        )}
-
-        {/* Hoàn tiền */}
-        <Panel title="Hoàn tiền">
-          <div className="form-stack">
-            <Field label="Chọn hóa đơn">
-              <select value={refundForm.invoice_id} onChange={(e) => setRefundForm((p) => ({ ...p, invoice_id: e.target.value }))}>
-                <option value="">Chọn hóa đơn đã thanh toán</option>
-                {invoices.filter((inv) => ["paid", "issued"].includes(inv.invoice_status)).map((inv) => <option key={inv.id} value={inv.id}>{inv.invoice_number} — {inv.patient_name}</option>)}
-              </select>
-            </Field>
-            <Field label="Số tiền hoàn (VNĐ)"><input type="number" value={refundForm.amount} onChange={(e) => setRefundForm((p) => ({ ...p, amount: e.target.value }))} /></Field>
-            <Field label="Lý do hoàn tiền"><input value={refundForm.reason} onChange={(e) => setRefundForm((p) => ({ ...p, reason: e.target.value }))} /></Field>
-            <button className="pharm-btn danger fill" onClick={handleRefund} disabled={saving}>{saving ? "Đang xử lý..." : "Hoàn tiền"}</button>
-          </div>
-        </Panel>
-      </div>
-    </div>
   );
 }
 
@@ -512,21 +548,15 @@ function TabThanhToan({ loading, invoices, reload }) {
 export function PharmacistPortal({ loading, data, reload, activeTab }) {
   const medicines = data["/api/v1/medicines"] || [];
   const prescriptions = data["/api/v1/prescriptions"] || [];
-  const invoices = data["/api/v1/invoices"] || [];
   const suppliers = data["/api/v1/suppliers"] || [];
-  const completedAppts = data["/api/v1/appointments/completed-no-invoice"] || [];
+  const invoices = data["/api/v1/invoices"] || [];
 
   return (
     <div className="dashboard-sections">
       {activeTab === "donthuoccancap" && <TabTongQuan loading={loading} prescriptions={prescriptions} reload={reload} />}
       {["tonkho", "nhapkho"].includes(activeTab) && <TabKhoThuoc loading={loading} medicines={medicines} suppliers={suppliers} reload={reload} />}
       {activeTab === "nhacungcap" && <TabNhaCungCap loading={loading} suppliers={suppliers} reload={reload} />}
-      {activeTab === "giaothuocthanhtoan" && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <TabHoaDon loading={loading} invoices={invoices} completedAppts={completedAppts} reload={reload} />
-          <TabThanhToan loading={loading} invoices={invoices} reload={reload} />
-        </div>
-      )}
+      {activeTab === "giaothuocthanhtoan" && <TabHoaDon loading={loading} prescriptions={prescriptions} medicines={medicines} invoices={invoices} reload={reload} />}
       {activeTab === "lichsuxuatnhap" && (
         <Panel title="Chức năng trống">
           <EmptyState text="Chức năng này đang được phát triển hoặc chưa có dữ liệu." />

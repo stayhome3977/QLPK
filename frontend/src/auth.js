@@ -1,29 +1,36 @@
 import { createContext, createElement, useContext, useMemo, useState } from "react";
-import { api, clearAccessToken, setAccessToken } from "./api/http";
+import { api, clearAuthSession, hydrateAuthSession, storeAuthSession } from "./api/http";
 
 const AuthContext = createContext(null);
+const EMPTY_SESSION = { user: null, accessToken: null, refreshToken: null };
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState({
-    user: null,
-    accessToken: null,
-    refreshToken: null
+  const [session, setSession] = useState(() => {
+    const storedSession = hydrateAuthSession();
+    if (!storedSession?.user || !storedSession?.accessToken || !storedSession?.refreshToken) {
+      clearAuthSession();
+      return EMPTY_SESSION;
+    }
+
+    return storedSession;
   });
 
   const login = async (email, password) => {
     const { data } = await api.post("/api/v1/auth/login", { email, password });
-    setSession({
+    const nextSession = {
       user: data.user,
       accessToken: data.access_token,
       refreshToken: data.refresh_token
-    });
-    setAccessToken(data.access_token);
+    };
+
+    storeAuthSession(nextSession);
+    setSession(nextSession);
     return data.user;
   };
 
   const logout = () => {
-    clearAccessToken();
-    setSession({ user: null, accessToken: null, refreshToken: null });
+    clearAuthSession();
+    setSession(EMPTY_SESSION);
   };
 
   const value = useMemo(

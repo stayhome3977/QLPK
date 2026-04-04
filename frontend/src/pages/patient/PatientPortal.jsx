@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import { api } from "../../api/http";
+import { api, downloadAuthenticatedFile } from "../../api/http";
 import { Alert, EmptyState, Panel } from "../../components/shared/UI";
 import { currency, fmtDate, fmtTime, STATUS_LABELS, INVOICE_STATUS_LABELS } from "../../utils/helpers";
 
@@ -76,6 +76,14 @@ export function PatientPortal({ loading, data, reload, activeTab }) {
       setProfileForm(null);
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const downloadInvoicePdf = async (invoiceId) => {
+    try {
+      await downloadAuthenticatedFile(`/api/v1/invoices/${invoiceId}/pdf`, `hoa-don-${invoiceId}.pdf`);
+    } catch (error) {
+      alert(error.response?.data?.detail || "Không thể tải PDF hóa đơn");
     }
   };
 
@@ -176,9 +184,9 @@ export function PatientPortal({ loading, data, reload, activeTab }) {
                     {invoice.payment_status === "paid" ? "Đã thanh toán" : "Chưa thanh toán"} - {currency(invoice.total_amount)}
                   </p>
                 </div>
-                <a className="secondary-link button-link" href={`${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"}/api/v1/invoices/${invoice.id}/pdf`} target="_blank" rel="noreferrer">
+                <button type="button" className="secondary-link button-link" onClick={() => void downloadInvoicePdf(invoice.id)}>
                   PDF
-                </a>
+                </button>
               </div>
             ))}
           </div>

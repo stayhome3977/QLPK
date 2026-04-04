@@ -37,7 +37,7 @@ class TokenResponse(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=1)
 
 
 class RegisterRequest(BaseModel):
@@ -66,6 +66,20 @@ class PatientUpdate(BaseModel):
     occupation: str | None = None
     emergency_contact_name: str | None = None
     emergency_contact_phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+
+    @field_validator("full_name", "phone", "emergency_contact_phone", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v: Any) -> Any:
+        if v == "":
+            return None
+        return v
+
+    @field_validator("date_of_birth", mode="before")
+    @classmethod
+    def empty_date_to_none(cls, v: Any) -> Any:
+        if v == "" or v is None:
+            return None
+        return v
 
 
 class QuickPatientCreate(BaseModel):
@@ -139,11 +153,15 @@ class DoctorSchedulePayload(BaseModel):
     max_patients: int = Field(default=20, ge=1)
 
 
-class DoctorBusySlotPayload(BaseModel):
-    busy_date: date
-    start_time: time
-    end_time: time
-    reason: str | None = None
+# ============================================================
+# DEPRECATED - DoctorBusySlot functionality removed
+# ============================================================
+
+# class DoctorBusySlotPayload(BaseModel):
+#     busy_date: date
+#     start_time: time
+#     end_time: time
+#     reason: str | None = None
 
 
 class DoctorLeavePayload(BaseModel):
@@ -187,10 +205,11 @@ class AppointmentCreate(BaseModel):
     patient_id: int | None = None
     doctor_id: int
     primary_service_id: int | None = None
+    service_ids: list[int] = Field(default_factory=list)
     appointment_date: date
     appointment_time: time
     duration_minutes: int = Field(default=30, ge=10)
-    chief_complaint: str = Field(min_length=10, max_length=500)
+    chief_complaint: str | None = None
     notes: str | None = None
 
 
@@ -285,7 +304,6 @@ class SupplierCreate(BaseModel):
     phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
     email: EmailStr | None = None
     address: str | None = None
-    tax_code: str | None = None
     notes: str | None = None
 
 
@@ -302,11 +320,8 @@ class MedicineCreate(BaseModel):
 
 
 class MedicineBatchImport(BaseModel):
-    batch_number: str
-    expiry_date: date
     import_quantity: int = Field(ge=1)
     import_unit_cost: float = Field(default=0, ge=0)
-    supplier_name: str | None = None
 
 
 class InvoiceGeneratePayload(BaseModel):
@@ -324,7 +339,7 @@ class InvoicePayPayload(BaseModel):
 
 
 class PrescriptionCheckoutPayload(BaseModel):
-    payment_method: str
+    payment_method: str | None = None
 
 
 class RefundPayload(BaseModel):
@@ -353,6 +368,8 @@ class AppointmentView(ORMBase):
     notes: str | None = None
     proposal: dict[str, Any] | None = None
     services: list[dict[str, Any]] | None = None
+    medical_record: dict[str, Any] | None = None
+    prescription: dict[str, Any] | None = None
     created_at: datetime
 
 

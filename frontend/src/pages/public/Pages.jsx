@@ -222,6 +222,7 @@ export function BookingPage() {
   const [form, setForm] = useState({
     doctor_id: doctorId || "",
     primary_service_id: "",
+    service_ids: [],
     appointment_date: "",
     appointment_time: "",
     chief_complaint: "",
@@ -234,7 +235,7 @@ export function BookingPage() {
     const query = new URLSearchParams(location.search);
     const service = query.get("service");
     if (service) {
-      setForm((prev) => ({ ...prev, primary_service_id: service }));
+      setForm((prev) => ({ ...prev, primary_service_id: service, service_ids: [service] }));
     }
   }, [location.search]);
 
@@ -253,6 +254,23 @@ export function BookingPage() {
   }, [form.doctor_id, form.appointment_date]);
 
   const selectedDoctor = doctors.find((item) => String(item.id) === String(form.doctor_id));
+  const selectedServices = services.filter((item) => form.service_ids.includes(String(item.id)));
+  const selectedServicesTotal = selectedServices.reduce((sum, item) => sum + Number(item.price || 0), 0);
+
+  const toggleService = (serviceId) => {
+    setForm((prev) => {
+      const serviceKey = String(serviceId);
+      const exists = prev.service_ids.includes(serviceKey);
+      const service_ids = exists
+        ? prev.service_ids.filter((item) => item !== serviceKey)
+        : [...prev.service_ids, serviceKey];
+      return {
+        ...prev,
+        service_ids,
+        primary_service_id: service_ids[0] || "",
+      };
+    });
+  };
 
   const submitBooking = async (event) => {
     event.preventDefault();
@@ -265,8 +283,10 @@ export function BookingPage() {
       await api.post("/api/v1/appointments", {
         doctor_id: Number(form.doctor_id),
         primary_service_id: form.primary_service_id ? Number(form.primary_service_id) : null,
+        service_ids: form.service_ids.map((item) => Number(item)),
         appointment_date: form.appointment_date,
         appointment_time: form.appointment_time,
+        duration_minutes: 30,
         chief_complaint: form.chief_complaint,
       });
       navigate("/patient");
@@ -302,16 +322,28 @@ export function BookingPage() {
               </select>
             </Field>
 
-            <Field label="Dịch vụ chính">
-              <select value={form.primary_service_id} onChange={(e) => setForm((p) => ({ ...p, primary_service_id: e.target.value }))}>
-                <option value="">Chọn dịch vụ</option>
-                {services.map((service) => (
-                  <option key={service.id} value={service.id}>
-                    {service.name}
-                  </option>
-                ))}
-              </select>
+            <Field label="Gói dịch vụ đăng ký">
+              <div className="list-stack" style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #dbe4f0", borderRadius: 12, padding: 8 }}>
+                {services.map((service) => {
+                  const checked = form.service_ids.includes(String(service.id));
+                  return (
+                    <label key={service.id} style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer", padding: "4px 0" }}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)} />
+                      <span style={{ fontSize: "0.9rem", lineHeight: "1.3", flex: 1 }}>
+                        <strong style={{ fontSize: "0.9rem" }}>{service.name}</strong>
+                        <div style={{ fontSize: "0.8rem", color: "#667085", margin: "2px 0" }}>{service.description}</div>
+                        <small style={{ fontSize: "0.8rem" }}>{currency(service.price)}</small>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </Field>
+
+            <div className="doctor-details-text">
+              <p><strong>Số dịch vụ đã chọn:</strong> {selectedServices.length}</p>
+              <p><strong>Tổng tiền dịch vụ:</strong> {currency(selectedServicesTotal)}</p>
+            </div>
 
             <Field label="Ngày khám:">
               <input type="date" value={form.appointment_date} onChange={(e) => setForm((p) => ({ ...p, appointment_date: e.target.value }))} />

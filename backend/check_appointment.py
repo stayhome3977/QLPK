@@ -1,5 +1,5 @@
 from app.core.database import SessionLocal
-from app.models.entities import Appointment, DoctorSchedule, DoctorBusySlot
+from app.models.entities import Appointment, DoctorSchedule
 from app.routers.clinic import get_available_slots_logic
 from datetime import date
 

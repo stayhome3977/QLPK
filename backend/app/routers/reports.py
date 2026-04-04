@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import require_role
-from app.models.entities import Appointment, AppointmentStatus, Invoice, Medicine, PaymentStatus
+from app.models.entities import Appointment, AppointmentStatus, Doctor, Invoice, Medicine, PaymentStatus
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
@@ -62,6 +62,15 @@ def dashboard_report(
 ):
     query_date = target_date or date.today()
     today_appointments = db.query(Appointment).filter(Appointment.appointment_date == query_date).count()
+    total_doctors = db.query(Doctor).count()
+    total_exam_days = db.query(func.count(func.distinct(Appointment.appointment_date))).scalar() or 0
+    total_inventory = db.query(func.coalesce(func.sum(Medicine.current_stock), 0)).scalar() or 0
+    total_fund = (
+        db.query(func.coalesce(func.sum(Invoice.paid_amount), 0))
+        .filter(Invoice.payment_status.in_([PaymentStatus.paid, PaymentStatus.credit_approved]))
+        .scalar()
+        or 0
+    )
     waiting = db.query(Appointment).filter(Appointment.appointment_date == query_date, Appointment.status == AppointmentStatus.checked_in).count()
     in_progress = db.query(Appointment).filter(Appointment.appointment_date == query_date, Appointment.status == AppointmentStatus.in_progress).count()
     paid_today = (
@@ -72,6 +81,10 @@ def dashboard_report(
     )
     low_stock = db.query(Medicine).filter(Medicine.current_stock < Medicine.reorder_level).count()
     return {
+        "total_doctors": total_doctors,
+        "total_exam_days": int(total_exam_days),
+        "total_inventory": float(total_inventory),
+        "total_fund": float(total_fund),
         "today_appointments": today_appointments,
         "waiting": waiting,
         "in_progress": in_progress,

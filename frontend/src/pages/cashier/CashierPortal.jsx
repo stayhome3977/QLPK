@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api } from "../../api/http";
+import { api, downloadAuthenticatedFile } from "../../api/http";
 import { Field, Panel, Alert } from "../../components/shared/UI";
 import { currency, fmtDate, INVOICE_STATUS_LABELS } from "../../utils/helpers";
 
@@ -18,6 +18,7 @@ export function CashierPortal({ data, reload, runAction }) {
   }));
 
   const approveCredit = (id) => runAction(() => api.patch(`/api/v1/invoices/${id}/approve-credit`));
+  const downloadInvoicePdf = (id) => runAction(() => downloadAuthenticatedFile(`/api/v1/invoices/${id}/pdf`, `hoa-don-${id}.pdf`));
 
   return (
     <>
@@ -46,7 +47,7 @@ export function CashierPortal({ data, reload, runAction }) {
                       {i.payment_status === "awaiting_confirmation" && (
                         <button className="btn btn-sm btn-success" onClick={() => runAction(() => api.patch(`/api/v1/invoices/${i.id}/confirm-transfer`))}>✅ Duyệt</button>
                       )}
-                      <a href={`http://127.0.0.1:8000/api/v1/invoices/${i.id}/pdf`} target="_blank" rel="noreferrer" className="btn btn-sm btn-primary">PDF</a>
+                      <button type="button" onClick={() => downloadInvoicePdf(i.id)} className="btn btn-sm btn-primary">PDF</button>
                     </div>
                   </td>
                 </tr>
@@ -73,7 +74,7 @@ export function CashierPortal({ data, reload, runAction }) {
               <select value={pay.payment_method} onChange={(e) => setPay(p => ({ ...p, payment_method: e.target.value }))}>
                 <option value="cash">Tiền mặt</option>
                 <option value="card">Thẻ tín dụng / Ghi nợ</option>
-                <option value="transfer">Chuyển khoản / QR Pay</option>
+                <option value="qr">Mã QR</option>
                 <option value="insurance_support">Bảo lãnh viện phí</option>
               </select>
             </Field>

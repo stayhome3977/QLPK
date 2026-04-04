@@ -1124,10 +1124,26 @@ textarea {
   align-items: center;
   margin-bottom: 16px;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .pharm-count {
   font-size: 0.88rem;
   color: var(--muted);
+}
+.pharm-search-input {
+  min-width: min(360px, 100%);
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: white;
+}
+.pharm-detail-section {
+  display: grid;
+  gap: 12px;
+}
+.pharm-detail-section h4 {
+  margin: 0;
+  color: #24344d;
 }
 
 /* Form grid 2-col */
@@ -1202,6 +1218,7 @@ textarea {
 .badge-dispensed, .badge-paid, .badge-credit_approved  { background: rgba(32, 178, 107, 0.13); color: #116840; }
 .badge-cancelled, .badge-refunded { background: rgba(228, 88, 88, 0.12); color: #9a2c2c; }
 .badge-awaiting_payment, .badge-partially_paid { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
+.badge-unpaid, .badge-partial, .badge-awaiting_confirmation { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
 .badge-warn { background: rgba(228, 88, 88, 0.1); color: var(--red); border-radius: 6px; padding: 2px 8px; }
 
 /* Invoice detail block */

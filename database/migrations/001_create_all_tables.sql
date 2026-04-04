@@ -131,6 +131,10 @@ CREATE TABLE IF NOT EXISTS lich_lam_viec_bac_si (
     CONSTRAINT fk_lich_lam_viec_quan_tri FOREIGN KEY (quan_ly_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ============================================================
+-- BẢNG ĐÃ LOẠI BỎ - KHÔNG SỬ DỤNG NỮA
+-- ============================================================
+
 CREATE TABLE IF NOT EXISTS khoang_ban_bac_si (
     ma_khoang_ban               INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_bac_si                   INT UNSIGNED NOT NULL,
@@ -226,6 +230,10 @@ CREATE TABLE IF NOT EXISTS lich_hen (
     CONSTRAINT fk_lich_hen_tai_kham_tu FOREIGN KEY (tai_kham_tu_lich_hen) REFERENCES lich_hen(ma_lich_hen)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ============================================================
+-- BẢNG ĐÃ LOẠI BỎ - KHÔNG SỬ DỤNG NỮA
+-- ============================================================
+
 CREATE TABLE IF NOT EXISTS dich_vu_lich_hen (
     ma_dich_vu_lich_hen         INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_lich_hen                 INT UNSIGNED NOT NULL,
@@ -272,7 +280,6 @@ CREATE TABLE IF NOT EXISTS nha_cung_cap (
     so_dien_thoai               VARCHAR(15) NULL,
     email                       VARCHAR(150) NULL,
     dia_chi                     TEXT NULL,
-    ma_so_thue                  VARCHAR(50) NULL,
     ghi_chu                     TEXT NULL,
     dang_hop_tac                TINYINT(1) NOT NULL DEFAULT 1,
     tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -305,9 +312,9 @@ CREATE TABLE IF NOT EXISTS thuoc (
 CREATE TABLE IF NOT EXISTS lo_thuoc (
     ma_lo_thuoc                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
     ma_thuoc                    INT UNSIGNED NOT NULL,
-    ma_nha_cung_cap             INT UNSIGNED NOT NULL,
+    ma_nha_cung_cap             INT UNSIGNED NULL,
     so_lo                       VARCHAR(100) NOT NULL,
-    han_su_dung                 DATE NOT NULL,
+    han_su_dung                 DATE NULL,
     so_luong_nhap               INT NOT NULL,
     so_luong_con_lai            INT NOT NULL,
     so_luong_giu_cho            INT NOT NULL DEFAULT 0,
@@ -343,6 +350,33 @@ CREATE TABLE IF NOT EXISTS don_thuoc (
     CONSTRAINT fk_don_thuoc_chuan_bi_boi FOREIGN KEY (chuan_bi_boi) REFERENCES tai_khoan(ma_tai_khoan),
     CONSTRAINT fk_don_thuoc_giao_boi FOREIGN KEY (giao_boi) REFERENCES tai_khoan(ma_tai_khoan)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS phieu_bac_si_gui_duoc_si (
+    ma_phieu_gui_duoc_si        INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_lich_hen                 INT UNSIGNED NOT NULL,
+    ma_ho_so_benh_an            INT UNSIGNED NULL,
+    ma_don_thuoc                INT UNSIGNED NULL,
+    ma_benh_nhan                INT UNSIGNED NOT NULL,
+    ma_bac_si                   INT UNSIGNED NOT NULL,
+    gui_boi                     INT UNSIGNED NULL,
+    trang_thai                  ENUM('cho_thanh_toan','da_lap_hoa_don','da_thanh_toan','da_huy') NOT NULL DEFAULT 'cho_thanh_toan',
+    ghi_chu                     TEXT NULL,
+    tao_luc                     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cap_nhat_luc                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (ma_phieu_gui_duoc_si),
+    UNIQUE KEY uq_phieu_gui_duoc_si_lich_hen (ma_lich_hen),
+    KEY idx_phieu_gui_duoc_si_trang_thai (trang_thai),
+    CONSTRAINT fk_phieu_gui_duoc_si_lich_hen FOREIGN KEY (ma_lich_hen) REFERENCES lich_hen(ma_lich_hen) ON DELETE CASCADE,
+    CONSTRAINT fk_phieu_gui_duoc_si_ho_so FOREIGN KEY (ma_ho_so_benh_an) REFERENCES ho_so_benh_an(ma_ho_so_benh_an),
+    CONSTRAINT fk_phieu_gui_duoc_si_don_thuoc FOREIGN KEY (ma_don_thuoc) REFERENCES don_thuoc(ma_don_thuoc),
+    CONSTRAINT fk_phieu_gui_duoc_si_benh_nhan FOREIGN KEY (ma_benh_nhan) REFERENCES benh_nhan(ma_benh_nhan),
+    CONSTRAINT fk_phieu_gui_duoc_si_bac_si FOREIGN KEY (ma_bac_si) REFERENCES bac_si(ma_bac_si),
+    CONSTRAINT fk_phieu_gui_duoc_si_gui_boi FOREIGN KEY (gui_boi) REFERENCES tai_khoan(ma_tai_khoan)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Phiếu bác sĩ gửi dược sĩ để lập hóa đơn thuốc và dịch vụ';
+
+-- ============================================================
+-- BẢNG ĐÃ LOẠI BỎ - KHÔNG SỬ DỤNG NỮA
+-- ============================================================
 
 CREATE TABLE IF NOT EXISTS chi_tiet_don_thuoc (
     ma_chi_tiet_don_thuoc       INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -550,6 +584,12 @@ VALUES
 INSERT IGNORE INTO lich_hen (ma_lich_hen, ma_benh_nhan, ma_bac_si, ma_dich_vu_chinh, loai_luot_kham, nguon_dat, ngay_kham, gio_kham, thoi_luong_phut, trang_thai, ly_do_kham, da_den_luc, bat_dau_kham_luc, hoan_tat_luc)
 VALUES (1, 1, 1, 1, 'dat_truoc', 'ung_dung_benh_nhan', '2026-04-10', '09:00:00', 30, 'hoan_tat', 'Kham mụn viêm và tư vấn da', '2026-04-10 08:55:00', '2026-04-10 09:00:00', '2026-04-10 09:45:00');
 
+-- Dịch vụ đăng ký trong lịch hẹn
+INSERT IGNORE INTO dich_vu_lich_hen (ma_dich_vu_lich_hen, ma_lich_hen, ma_dich_vu, so_luong, don_gia, them_boi)
+VALUES
+(1, 1, 1, 1, 200000, 2),
+(2, 1, 4, 1, 250000, 2);
+
 -- Ho so benh an
 INSERT IGNORE INTO ho_so_benh_an (ma_ho_so_benh_an, ma_lich_hen, ma_benh_nhan, ma_bac_si, trieu_chung, ket_qua_tham_kham, chan_doan, ma_icd10, phac_do_dieu_tri, ngay_tai_kham)
 VALUES (1, 1, 1, 1, 'Mụn viêm đỏ nhiều ở má và cằm, có sẹo lõm nhẹ', 'Thăm khám da mặt, kiểm tra viêm nang lông', 'Mụn trứng cá mức độ trung bình (Acne vulgaris)', 'L70', 'Kê đơn thuốc bôi + uống, hướng dẫn chăm sóc da tại nhà', '2026-05-08');
@@ -567,6 +607,12 @@ VALUES
 -- Phan bo lo don thuoc
 INSERT IGNORE INTO phan_bo_lo_don_thuoc (ma_phan_bo, ma_chi_tiet_don_thuoc, ma_lo_thuoc, so_luong_giao)
 VALUES (1, 1, 1, 1), (2, 2, 3, 2);
+
+-- Phiếu bác sĩ gửi dược sĩ
+INSERT IGNORE INTO phieu_bac_si_gui_duoc_si
+    (ma_phieu_gui_duoc_si, ma_lich_hen, ma_ho_so_benh_an, ma_don_thuoc, ma_benh_nhan, ma_bac_si, gui_boi, trang_thai, ghi_chu)
+VALUES
+    (1, 1, 1, 1, 1, 1, 2, 'da_thanh_toan', 'Phiếu gồm phí khám, dịch vụ đã đăng ký và đơn thuốc điều trị mụn.');
 
 -- Thong bao
 INSERT IGNORE INTO thong_bao (ma_thong_bao, ma_tai_khoan, tieu_de, noi_dung, loai_thong_bao, duong_dan_hanh_dong)

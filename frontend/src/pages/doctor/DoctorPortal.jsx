@@ -4,6 +4,54 @@ import { useAuth } from "../../auth";
 import { EmptyState, Field, Panel } from "../../components/shared/UI";
 import { currency, fmtDate, fmtDateTime, fmtTime, PAYMENT_STATUS_LABELS, STATUS_LABELS } from "../../utils/helpers";
 
+const defaultRecord = { diagnosis: "", symptoms: "" };
+const defaultPrescriptionDraft = { medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" };
+
+function getErrorMessage(error, fallback) {
+  const detail = error?.response?.data?.detail;
+  if (detail === "Invoice is locked for this appointment") {
+    return "Lịch hẹn này đã có hóa đơn khóa, không thể sửa lại đơn thuốc.";
+  }
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) return detail[0]?.msg || fallback;
+  return error?.message || fallback;
+}
+
+function mapPrescriptionItem(item) {
+  return {
+    medicine_id: Number(item.medicine_id),
+    quantity: Number(item.quantity || 0),
+    dosage: item.dosage || defaultPrescriptionDraft.dosage,
+    frequency: item.frequency || defaultPrescriptionDraft.frequency,
+    duration_days: item.duration_days ?? null,
+    instruction: item.instruction || "",
+  };
+}
+
+function normalizePrescriptionItem(item) {
+  return {
+    medicine_id: Number(item.medicine_id),
+    quantity: Number(item.quantity || 0),
+    dosage: item.dosage || "",
+    frequency: item.frequency || "",
+    duration_days: item.duration_days ?? null,
+    instruction: item.instruction || "",
+  };
+}
+
+function prescriptionItemsEqual(left = [], right = []) {
+  const normalizeList = (items) =>
+    items
+      .map((item) => normalizePrescriptionItem(item))
+      .sort((a, b) => {
+        if (a.medicine_id !== b.medicine_id) return a.medicine_id - b.medicine_id;
+        if (a.dosage !== b.dosage) return a.dosage.localeCompare(b.dosage);
+        if (a.frequency !== b.frequency) return a.frequency.localeCompare(b.frequency);
+        return a.quantity - b.quantity;
+      });
+  return JSON.stringify(normalizeList(left)) === JSON.stringify(normalizeList(right));
+}
+
 export function DoctorPortal({ loading, data, reload, activeTab }) {
   const appointments = data["/api/v1/appointments"] || [];
   const medicines = data["/api/v1/medicines"] || [];
@@ -22,8 +70,8 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
   );
   const [selected, setSelected] = useState(null);
   const [proposal, setProposal] = useState({ proposed_date: "", proposed_time: "", note: "", discount_percent: 0, discount_note: "" });
-  const [record, setRecord] = useState({ diagnosis: "", symptoms: "" });
-  const [prescriptionDraft, setPrescriptionDraft] = useState({ medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" });
+  const [record, setRecord] = useState(defaultRecord);
+  const [prescriptionDraft, setPrescriptionDraft] = useState(defaultPrescriptionDraft);
   const [prescriptionItems, setPrescriptionItems] = useState([]);
   const [schedule, setSchedule] = useState([]);
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -89,9 +137,6 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
 
   const chooseAppointment = (appointment) => {
     setSelected(appointment);
-    setRecord({ diagnosis: "", symptoms: appointment.chief_complaint || "" });
-    setPrescriptionDraft({ medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" });
-    setPrescriptionItems([]);
   };
 
   const activeList = useMemo(() => {
@@ -103,12 +148,42 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
   useEffect(() => {
     if (activeList.length === 0) {
       setSelected(null);
+      setRecord(defaultRecord);
+      setPrescriptionDraft(defaultPrescriptionDraft);
+      setPrescriptionItems([]);
       return;
     }
-    if (!selected || !activeList.some((item) => item.id === selected.id)) {
+    if (!selected) {
       setSelected(activeList[0]);
+      return;
+    }
+    const refreshedSelection = activeList.find((item) => item.id === selected.id);
+    if (!refreshedSelection) {
+      setSelected(activeList[0]);
+      return;
+    }
+    if (refreshedSelection !== selected) {
+      setSelected(refreshedSelection);
     }
   }, [activeList, selected]);
+
+  useEffect(() => {
+    if (!selected) {
+      setRecord(defaultRecord);
+      setPrescriptionDraft(defaultPrescriptionDraft);
+      setPrescriptionItems([]);
+      return;
+    }
+
+    const medicalRecord = selected.medical_record;
+    const existingItems = Array.isArray(selected.prescription?.items) ? selected.prescription.items.map(mapPrescriptionItem) : [];
+    setRecord({
+      diagnosis: medicalRecord?.diagnosis || "",
+      symptoms: medicalRecord?.symptoms ?? (selected.chief_complaint || ""),
+    });
+    setPrescriptionDraft(defaultPrescriptionDraft);
+    setPrescriptionItems(existingItems);
+  }, [selected]);
 
   const approve = async () => {
     await api.patch(`/api/v1/appointments/${selected.id}/approve`, {});
@@ -165,11 +240,6 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
     await reload();
   };
 
-  const resetPrescriptionState = () => {
-    setPrescriptionDraft({ medicine_id: "", quantity: 1, dosage: "1 viên", frequency: "2 lần/ngày" });
-    setPrescriptionItems([]);
-  };
-
   const addMedicineToPrescription = () => {
     if (!prescriptionDraft.medicine_id) return;
     const medicineId = String(prescriptionDraft.medicine_id);
@@ -207,13 +277,14 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
   };
 
   const saveRecord = async () => {
-    const medicalRecord = await api.post("/api/v1/medical-records", {
-      appointment_id: selected.id,
-      patient_id: selected.patient_id,
-      doctor_id: selected.doctor_id,
-      diagnosis: record.diagnosis,
-      symptoms: record.symptoms,
-    });
+    if (!selected) return;
+
+    const diagnosis = record.diagnosis.trim();
+    const symptoms = record.symptoms.trim();
+    if (diagnosis.length < 3) {
+      alert("Chẩn đoán cần ít nhất 3 ký tự.");
+      return;
+    }
 
     const itemsPayload =
       prescriptionItems.length > 0
@@ -228,21 +299,38 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
             },
           ]
         : [];
+    const existingPrescriptionItems = Array.isArray(selected.prescription?.items) ? selected.prescription.items : [];
+    const shouldSavePrescription = itemsPayload.length > 0 && (!selected.prescription || !prescriptionItemsEqual(existingPrescriptionItems, itemsPayload));
 
-    if (itemsPayload.length > 0) {
-      await api.post("/api/v1/prescriptions", {
-        medical_record_id: medicalRecord.data.id,
+    try {
+      const medicalRecord = await api.post("/api/v1/medical-records", {
+        appointment_id: selected.id,
         patient_id: selected.patient_id,
         doctor_id: selected.doctor_id,
-        items: itemsPayload.map((item) => ({
-          ...item,
-          unit_price: Number(medicines.find((m) => String(m.id) === String(item.medicine_id))?.price_per_unit || 0),
-        })),
+        diagnosis,
+        symptoms,
       });
-    }
 
-    await reload();
-    resetPrescriptionState();
+      let prescriptionMessage = "";
+      if (shouldSavePrescription) {
+        const prescription = await api.post("/api/v1/prescriptions", {
+          medical_record_id: medicalRecord.data.id,
+          patient_id: selected.patient_id,
+          doctor_id: selected.doctor_id,
+          items: itemsPayload.map((item) => ({
+            ...item,
+            unit_price: Number(medicines.find((m) => String(m.id) === String(item.medicine_id))?.price_per_unit || 0),
+          })),
+        });
+        prescriptionMessage = prescription.data?.message || "";
+      }
+
+      await reload();
+      const messages = [medicalRecord.data?.message, prescriptionMessage].filter(Boolean);
+      alert(messages.join(" / ") || "Đã lưu bệnh án.");
+    } catch (error) {
+      alert(getErrorMessage(error, "Không thể lưu bệnh án và gửi đơn thuốc."));
+    }
   };
 
   return (
@@ -374,7 +462,9 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
                     <ul>
                       {selected.services.map((service) => (
                         <li key={service.service_id}>
-                          {service.name} {service.quantity > 1 ? `× ${service.quantity}` : ""}
+                          {service.name}
+                          {service.quantity > 1 ? ` × ${service.quantity}` : ""}
+                          {service.unit_price ? ` - ${currency(service.line_total || service.unit_price)}` : ""}
                         </li>
                       ))}
                     </ul>

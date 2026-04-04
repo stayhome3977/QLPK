@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { api } from "../../api/http";
+import { api, downloadAuthenticatedFile } from "../../api/http";
 import { EmptyState, Field, Panel } from "../../components/shared/UI";
-import { ROLE_LABELS } from "../../utils/helpers";
+import { currency, ROLE_LABELS } from "../../utils/helpers";
 
 export function AdminPortal({ loading, data, reload, activeTab }) {
   const [customDashboard, setCustomDashboard] = useState(null);
@@ -126,11 +126,10 @@ export function AdminPortal({ loading, data, reload, activeTab }) {
 
   const resetPassword = async () => {
      if (!selectedAccountId) return alert("Vui lòng chọn tài khoản");
-     const newPwd = window.prompt("Nhập mật khẩu mới cho tài khoản:");
-     if (newPwd) {
+     if (window.confirm("Đặt lại mật khẩu tài khoản này về mặc định 123456?")) {
        try {
-         await api.patch(`/api/v1/admin/accounts/${selectedAccountId}/reset-password`, { new_password: newPwd });
-         alert("Đã đặt lại mật khẩu thành công.");
+         await api.patch(`/api/v1/admin/accounts/${selectedAccountId}/reset-password`);
+         alert("Đã đặt lại mật khẩu mặc định 123456.");
        } catch (e) {
          alert("Lỗi khi đặt lại mật khẩu");
        }
@@ -414,8 +413,12 @@ export function AdminPortal({ loading, data, reload, activeTab }) {
     }
   };
 
-  const exportContractsPdf = () => {
-    window.open("/api/v1/admin/contracts/pdf", "_blank");
+  const exportContractsPdf = async () => {
+    try {
+      await downloadAuthenticatedFile("/api/v1/admin/contracts/pdf", "danh_sach_ho_so_bac_si.pdf");
+    } catch (e) {
+      alert(e.response?.data?.detail || "Không thể xuất PDF hồ sơ bác sĩ");
+    }
   };
 
   const refreshHoSo = async () => {
@@ -1109,22 +1112,26 @@ export function AdminPortal({ loading, data, reload, activeTab }) {
              </div>
            </div>
            
-           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
+           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "16px" }}>
+              <div style={{ background: "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)", color: "white", padding: "24px", borderRadius: "16px", display: "flex", flexDirection: "column" }}>
+                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Tổng bác sĩ</span>
+                 <strong style={{ fontSize: "2rem", marginTop: "8px" }}>{dashboard.total_doctors || 0}</strong>
+              </div>
               <div style={{ background: "linear-gradient(135deg, #3B82F6 0%, #1E3A8A 100%)", color: "white", padding: "24px", borderRadius: "16px", display: "flex", flexDirection: "column" }}>
-                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Tổng lịch hẹn hôm nay</span>
-                 <strong style={{ fontSize: "2rem", marginTop: "8px" }}>{dashboard.today_appointments || 0}</strong>
+                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Tổng ngày khám</span>
+                 <strong style={{ fontSize: "2rem", marginTop: "8px" }}>{dashboard.total_exam_days || 0}</strong>
               </div>
               <div style={{ background: "linear-gradient(135deg, #10B981 0%, #047857 100%)", color: "white", padding: "24px", borderRadius: "16px", display: "flex", flexDirection: "column" }}>
-                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Số bệnh nhân đang chờ</span>
-                 <strong style={{ fontSize: "2rem", marginTop: "8px" }}>{dashboard.waiting || 0}</strong>
+                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Tổng kho</span>
+                 <strong style={{ fontSize: "2rem", marginTop: "8px" }}>{Number(dashboard.total_inventory || 0).toLocaleString("vi-VN")}</strong>
               </div>
               <div style={{ background: "linear-gradient(135deg, #F59E0B 0%, #B45309 100%)", color: "white", padding: "24px", borderRadius: "16px", display: "flex", flexDirection: "column" }}>
-                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Thuốc sắp hết hạn/tồn thấp</span>
-                 <strong style={{ fontSize: "2rem", marginTop: "8px" }}>{dashboard.low_stock_count || 0}</strong>
+                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Tổng quỹ</span>
+                 <strong style={{ fontSize: "1.35rem", marginTop: "8px", lineHeight: 1.3 }}>{currency(dashboard.total_fund || 0)}</strong>
               </div>
               <div style={{ background: "linear-gradient(135deg, #8B5CF6 0%, #5B21B6 100%)", color: "white", padding: "24px", borderRadius: "16px", display: "flex", flexDirection: "column" }}>
-                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Tổng bác sĩ trực</span>
-                 <strong style={{ fontSize: "2rem", marginTop: "8px" }}>{doctors.length}</strong>
+                 <span style={{ fontSize: "0.9rem", opacity: 0.9 }}>Tổng lịch hẹn hôm nay</span>
+                 <strong style={{ fontSize: "2rem", marginTop: "8px" }}>{dashboard.today_appointments || 0}</strong>
               </div>
            </div>
 

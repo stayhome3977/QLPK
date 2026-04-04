@@ -125,6 +125,7 @@ class PaymentMethod(str, enum.Enum):
     cash = "cash"
     card = "card"
     transfer = "transfer"
+    qr = "qr"
     insurance_support = "insurance_support"
     other = "other"
 
@@ -164,6 +165,13 @@ class InventoryAction(str, enum.Enum):
     import_return = "import_return"
 
 
+class PharmacyRequestStatus(str, enum.Enum):
+    pending = "pending"
+    invoiced = "invoiced"
+    paid = "paid"
+    cancelled = "cancelled"
+
+
 class User(Base):
     __tablename__ = "tai_khoan"
 
@@ -185,7 +193,7 @@ class Patient(Base):
     __tablename__ = "benh_nhan"
 
     id: Mapped[int] = mapped_column("ma_benh_nhan", Integer, primary_key=True, index=True)
-    user_id: Mapped[int | None] = mapped_column("ma_tai_khoan", ForeignKey("tai_khoan.ma_tai_khoan", ondelete="CASCADE"), unique=True)
+    user_id: Mapped[int | None] = mapped_column("ma_tai_khoan", Integer, ForeignKey("tai_khoan.ma_tai_khoan", ondelete="CASCADE"), unique=True)
     patient_code: Mapped[str] = mapped_column("ma_benh_nhan_he_thong", String(20), unique=True, index=True)
     created_source: Mapped[PatientSource] = mapped_column("nguon_tao", DBEnum(PatientSource, {"self_register": "tu_dang_ky", "frontdesk": "quan_tri", "phone": "quan_tri", "admin": "quan_tri"}), default=PatientSource.self_register)
     date_of_birth: Mapped[str | None] = mapped_column("ngay_sinh", Date)
@@ -205,7 +213,7 @@ class Doctor(Base):
     __tablename__ = "bac_si"
 
     id: Mapped[int] = mapped_column("ma_bac_si", Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column("ma_tai_khoan", ForeignKey("tai_khoan.ma_tai_khoan", ondelete="CASCADE"), unique=True)
+    user_id: Mapped[int] = mapped_column("ma_tai_khoan", Integer, ForeignKey("tai_khoan.ma_tai_khoan", ondelete="CASCADE"), unique=True)
     specialty: Mapped[str] = mapped_column("chuyen_khoa", String(100))
     license_number: Mapped[str] = mapped_column("so_chung_chi_hanh_nghe", String(50), unique=True)
     degree: Mapped[str | None] = mapped_column("bang_cap", String(100))
@@ -251,14 +259,14 @@ class DoctorSchedule(Base):
     __table_args__ = (UniqueConstraint("ma_bac_si", "thu_trong_tuan", "gio_bat_dau", name="uq_doctor_day"),)
 
     id: Mapped[int] = mapped_column("ma_lich_lam_viec", Integer, primary_key=True)
-    doctor_id: Mapped[int] = mapped_column("ma_bac_si", ForeignKey("bac_si.ma_bac_si", ondelete="CASCADE"))
+    doctor_id: Mapped[int] = mapped_column("ma_bac_si", Integer, ForeignKey("bac_si.ma_bac_si", ondelete="CASCADE"))
     day_of_week: Mapped[int] = mapped_column("thu_trong_tuan", Integer)
     start_time: Mapped[str] = mapped_column("gio_bat_dau", Time)
     end_time: Mapped[str] = mapped_column("gio_ket_thuc", Time)
     slot_duration: Mapped[int] = mapped_column("thoi_luong_moi_ca_phut", Integer, default=30)
     max_patients: Mapped[int] = mapped_column("so_benh_nhan_toi_da", Integer, default=20)
     is_active: Mapped[bool] = mapped_column("dang_ap_dung", Boolean, default=True)
-    managed_by: Mapped[int] = mapped_column("quan_ly_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    managed_by: Mapped[int] = mapped_column("quan_ly_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[str] = mapped_column("cap_nhat_luc", DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -268,23 +276,27 @@ class DoctorLeave(Base):
     __table_args__ = (UniqueConstraint("ma_bac_si", "ngay_nghi", name="uq_doc_date"),)
 
     id: Mapped[int] = mapped_column("ma_ngay_nghi", Integer, primary_key=True)
-    doctor_id: Mapped[int] = mapped_column("ma_bac_si", ForeignKey("bac_si.ma_bac_si", ondelete="CASCADE"))
+    doctor_id: Mapped[int] = mapped_column("ma_bac_si", Integer, ForeignKey("bac_si.ma_bac_si", ondelete="CASCADE"))
     leave_date: Mapped[str] = mapped_column("ngay_nghi", Date)
     reason: Mapped[str | None] = mapped_column("ly_do", String(200))
-    created_by: Mapped[int] = mapped_column("tao_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    created_by: Mapped[int] = mapped_column("tao_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
 
+
+# ============================================================
+# BẢNG ĐÃ LOẠI BỎ - KHÔNG SỬ DỤNG NỮA
+# ============================================================
 
 class DoctorBusySlot(Base):
     __tablename__ = "khoang_ban_bac_si"
 
     id: Mapped[int] = mapped_column("ma_khoang_ban", Integer, primary_key=True)
-    doctor_id: Mapped[int] = mapped_column("ma_bac_si", ForeignKey("bac_si.ma_bac_si", ondelete="CASCADE"))
+    doctor_id: Mapped[int] = mapped_column("ma_bac_si", Integer, ForeignKey("bac_si.ma_bac_si", ondelete="CASCADE"))
     busy_date: Mapped[str] = mapped_column("ngay_ap_dung", Date)
     start_time: Mapped[str] = mapped_column("gio_bat_dau", Time)
     end_time: Mapped[str] = mapped_column("gio_ket_thuc", Time)
     reason: Mapped[str | None] = mapped_column("ly_do", String(255))
-    created_by: Mapped[int] = mapped_column("tao_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    created_by: Mapped[int] = mapped_column("tao_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
 
 
@@ -315,8 +327,8 @@ class Appointment(Base):
     __tablename__ = "lich_hen"
 
     id: Mapped[int] = mapped_column("ma_lich_hen", Integer, primary_key=True, index=True)
-    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", ForeignKey("benh_nhan.ma_benh_nhan"))
-    doctor_id: Mapped[int] = mapped_column("ma_bac_si", ForeignKey("bac_si.ma_bac_si"))
+    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", Integer, ForeignKey("benh_nhan.ma_benh_nhan"))
+    doctor_id: Mapped[int] = mapped_column("ma_bac_si", Integer, ForeignKey("bac_si.ma_bac_si"))
     primary_service_id: Mapped[int | None] = mapped_column("ma_dich_vu_chinh", ForeignKey("dich_vu.ma_dich_vu"))
     visit_type: Mapped[VisitType] = mapped_column("loai_luot_kham", DBEnum(VisitType, {"scheduled": "dat_truoc", "walk_in": "dat_truoc", "follow_up": "tai_kham"}), default=VisitType.scheduled)
     booking_source: Mapped[BookingSource] = mapped_column("nguon_dat", DBEnum(BookingSource, {"patient_app": "ung_dung_benh_nhan", "phone": "quan_tri", "frontdesk": "quan_tri", "admin": "quan_tri"}), default=BookingSource.patient_app)
@@ -327,7 +339,7 @@ class Appointment(Base):
     queue_number: Mapped[int | None] = mapped_column("so_thu_tu", Integer)
     chief_complaint: Mapped[str | None] = mapped_column("ly_do_kham", Text)
     cancel_reason: Mapped[str | None] = mapped_column("ly_do_huy", Text)
-    cancelled_by: Mapped[int | None] = mapped_column("huy_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    cancelled_by: Mapped[int | None] = mapped_column("huy_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     cancelled_at: Mapped[str | None] = mapped_column("huy_luc", DateTime(timezone=True))
     confirmed_at: Mapped[str | None] = mapped_column("xac_nhan_luc", DateTime(timezone=True))
     checked_in_at: Mapped[str | None] = mapped_column("da_den_luc", DateTime(timezone=True))
@@ -347,6 +359,10 @@ class Appointment(Base):
     updated_at: Mapped[str] = mapped_column("cap_nhat_luc", DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+# ============================================================
+# BẢNG ĐÃ LOẠI BỎ - KHÔNG SỬ DỤNG NỮA
+# ============================================================
+
 class AppointmentService(Base):
     __tablename__ = "dich_vu_lich_hen"
 
@@ -355,7 +371,7 @@ class AppointmentService(Base):
     service_id: Mapped[int] = mapped_column("ma_dich_vu", ForeignKey("dich_vu.ma_dich_vu"))
     quantity: Mapped[int] = mapped_column("so_luong", Integer, default=1)
     unit_price: Mapped[float] = mapped_column("don_gia", Numeric(12, 0), default=0)
-    added_by: Mapped[int] = mapped_column("them_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    added_by: Mapped[int] = mapped_column("them_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     added_at: Mapped[str] = mapped_column("them_luc", DateTime(timezone=True), server_default=func.now())
     notes: Mapped[str | None] = mapped_column("ghi_chu", Text)
 
@@ -365,8 +381,8 @@ class MedicalRecord(Base):
 
     id: Mapped[int] = mapped_column("ma_ho_so_benh_an", Integer, primary_key=True)
     appointment_id: Mapped[int] = mapped_column("ma_lich_hen", ForeignKey("lich_hen.ma_lich_hen"), unique=True)
-    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", ForeignKey("benh_nhan.ma_benh_nhan"))
-    doctor_id: Mapped[int] = mapped_column("ma_bac_si", ForeignKey("bac_si.ma_bac_si"))
+    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", Integer, ForeignKey("benh_nhan.ma_benh_nhan"))
+    doctor_id: Mapped[int] = mapped_column("ma_bac_si", Integer, ForeignKey("bac_si.ma_bac_si"))
     symptoms: Mapped[str | None] = mapped_column("trieu_chung", Text)
     clinical_findings: Mapped[str | None] = mapped_column("ket_qua_tham_kham", Text)
     diagnosis: Mapped[str] = mapped_column("chan_doan", String(500))
@@ -405,12 +421,12 @@ class MedicineBatch(Base):
     id: Mapped[int] = mapped_column("ma_lo_thuoc", Integer, primary_key=True)
     medicine_id: Mapped[int] = mapped_column("ma_thuoc", ForeignKey("thuoc.ma_thuoc"))
     batch_number: Mapped[str] = mapped_column("so_lo", String(100))
-    expiry_date: Mapped[str] = mapped_column("han_su_dung", Date, index=True)
+    expiry_date: Mapped[str | None] = mapped_column("han_su_dung", Date, index=True)
     import_quantity: Mapped[int] = mapped_column("so_luong_nhap", Integer)
     remaining_quantity: Mapped[int] = mapped_column("so_luong_con_lai", Integer, index=True)
     reserved_quantity: Mapped[int] = mapped_column("so_luong_giu_cho", Integer, default=0)
     import_unit_cost: Mapped[float] = mapped_column("gia_nhap_don_vi", Numeric(12, 0), default=0)
-    supplier_id: Mapped[int] = mapped_column("ma_nha_cung_cap", ForeignKey("nha_cung_cap.ma_nha_cung_cap"))
+    supplier_id: Mapped[int | None] = mapped_column("ma_nha_cung_cap", ForeignKey("nha_cung_cap.ma_nha_cung_cap"))
     imported_at: Mapped[str] = mapped_column("nhap_luc", DateTime(timezone=True), server_default=func.now())
     is_active: Mapped[bool] = mapped_column("dang_ap_dung", Boolean, default=True)
 
@@ -420,17 +436,21 @@ class Prescription(Base):
 
     id: Mapped[int] = mapped_column("ma_don_thuoc", Integer, primary_key=True)
     medical_record_id: Mapped[int] = mapped_column("ma_ho_so_benh_an", ForeignKey("ho_so_benh_an.ma_ho_so_benh_an"), unique=True)
-    doctor_id: Mapped[int] = mapped_column("ma_bac_si", ForeignKey("bac_si.ma_bac_si"))
-    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", ForeignKey("benh_nhan.ma_benh_nhan"))
+    doctor_id: Mapped[int] = mapped_column("ma_bac_si", Integer, ForeignKey("bac_si.ma_bac_si"))
+    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", Integer, ForeignKey("benh_nhan.ma_benh_nhan"))
     status: Mapped[PrescriptionStatus] = mapped_column("trang_thai", DBEnum(PrescriptionStatus, {"pending": "cho_xu_ly", "prepared": "da_chuan_bi", "awaiting_payment": "cho_thanh_toan", "partially_dispensed": "giao_mot_phan", "dispensed": "da_giao", "cancelled": "da_huy"}), default=PrescriptionStatus.pending)
-    prepared_by: Mapped[int | None] = mapped_column("chuan_bi_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    prepared_by: Mapped[int | None] = mapped_column("chuan_bi_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     prepared_at: Mapped[str | None] = mapped_column("chuan_bi_luc", DateTime(timezone=True))
-    dispensed_by: Mapped[int | None] = mapped_column("giao_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    dispensed_by: Mapped[int | None] = mapped_column("giao_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     dispensed_at: Mapped[str | None] = mapped_column("giao_luc", DateTime(timezone=True))
     picked_up_at: Mapped[str | None] = mapped_column("nhan_thuoc_luc", DateTime(timezone=True))
     notes: Mapped[str | None] = mapped_column("ghi_chu", Text)
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
 
+
+# ============================================================
+# BẢNG ĐÃ LOẠI BỎ - KHÔNG SỬ DỤNG NỮA
+# ============================================================
 
 class PrescriptionItem(Base):
     __tablename__ = "chi_tiet_don_thuoc"
@@ -448,6 +468,10 @@ class PrescriptionItem(Base):
     unit_price: Mapped[float] = mapped_column("don_gia", Numeric(12, 0), default=0)
 
 
+# ============================================================
+# BẢNG ĐÃ LOẠI BỎ - PHỤ THUỘC PRESCRIPTIONITEM ĐÃ LOẠI BỎ
+# ============================================================
+
 class PrescriptionItemAllocation(Base):
     __tablename__ = "phan_bo_lo_don_thuoc"
     __table_args__ = (UniqueConstraint("ma_chi_tiet_don_thuoc", "ma_lo_thuoc", name="uq_item_batch"),)
@@ -460,19 +484,47 @@ class PrescriptionItemAllocation(Base):
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
 
 
+class PharmacyRequest(Base):
+    __tablename__ = "phieu_bac_si_gui_duoc_si"
+
+    id: Mapped[int] = mapped_column("ma_phieu_gui_duoc_si", Integer, primary_key=True)
+    appointment_id: Mapped[int] = mapped_column("ma_lich_hen", ForeignKey("lich_hen.ma_lich_hen", ondelete="CASCADE"), unique=True)
+    medical_record_id: Mapped[int | None] = mapped_column("ma_ho_so_benh_an", ForeignKey("ho_so_benh_an.ma_ho_so_benh_an"))
+    prescription_id: Mapped[int | None] = mapped_column("ma_don_thuoc", ForeignKey("don_thuoc.ma_don_thuoc"))
+    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", Integer, ForeignKey("benh_nhan.ma_benh_nhan"))
+    doctor_id: Mapped[int] = mapped_column("ma_bac_si", Integer, ForeignKey("bac_si.ma_bac_si"))
+    requested_by: Mapped[int | None] = mapped_column("gui_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
+    status: Mapped[PharmacyRequestStatus] = mapped_column(
+        "trang_thai",
+        DBEnum(
+            PharmacyRequestStatus,
+            {
+                "pending": "cho_thanh_toan",
+                "invoiced": "da_lap_hoa_don",
+                "paid": "da_thanh_toan",
+                "cancelled": "da_huy",
+            },
+        ),
+        default=PharmacyRequestStatus.pending,
+    )
+    notes: Mapped[str | None] = mapped_column("ghi_chu", Text)
+    created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[str] = mapped_column("cap_nhat_luc", DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Invoice(Base):
     __tablename__ = "hoa_don"
 
     id: Mapped[int] = mapped_column("ma_hoa_don", Integer, primary_key=True)
     appointment_id: Mapped[int] = mapped_column("ma_lich_hen", ForeignKey("lich_hen.ma_lich_hen"), unique=True)
-    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", ForeignKey("benh_nhan.ma_benh_nhan"))
-    cashier_id: Mapped[int | None] = mapped_column("ma_duoc_si", ForeignKey("tai_khoan.ma_tai_khoan"))
+    patient_id: Mapped[int] = mapped_column("ma_benh_nhan", Integer, ForeignKey("benh_nhan.ma_benh_nhan"))
+    cashier_id: Mapped[int | None] = mapped_column("ma_duoc_si", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     invoice_number: Mapped[str] = mapped_column("so_hoa_don", String(20), unique=True)
     invoice_status: Mapped[InvoiceStatus] = mapped_column("trang_thai_hoa_don", DBEnum(InvoiceStatus, {"draft": "nhap", "issued": "da_lap", "partially_paid": "thanh_toan_mot_phan", "paid": "da_thanh_toan", "cancelled": "da_huy", "refunded": "da_hoan_tien"}), default=InvoiceStatus.draft)
     subtotal_amount: Mapped[float] = mapped_column("tam_tinh", Numeric(12, 0), default=0)
     discount_amount: Mapped[float] = mapped_column("so_tien_giam", Numeric(12, 0), default=0)
     discount_reason: Mapped[str | None] = mapped_column("ly_do_giam", String(200))
-    approved_discount_by: Mapped[int | None] = mapped_column("duyet_giam_gia_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    approved_discount_by: Mapped[int | None] = mapped_column("duyet_giam_gia_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     insurance_support_amount: Mapped[float] = mapped_column("so_tien_ho_tro", Numeric(12, 0), default=0)
     total_amount: Mapped[float] = mapped_column("tong_thanh_toan", Numeric(12, 0), default=0)
     paid_amount: Mapped[float] = mapped_column("da_thu", Numeric(12, 0), default=0)
@@ -506,8 +558,8 @@ class PaymentTransaction(Base):
     amount: Mapped[float] = mapped_column("so_tien", Numeric(12, 0), default=0)
     transaction_ref: Mapped[str | None] = mapped_column("ma_tham_chieu_giao_dich", String(100))
     status: Mapped[TransactionStatus] = mapped_column("trang_thai", DBEnum(TransactionStatus, {"pending": "cho_xu_ly", "success": "thanh_cong", "failed": "that_bai", "cancelled": "da_huy"}), default=TransactionStatus.success)
-    created_by: Mapped[int] = mapped_column("tao_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
-    approved_by: Mapped[int | None] = mapped_column("duyet_boi", ForeignKey("tai_khoan.ma_tai_khoan"))
+    created_by: Mapped[int] = mapped_column("tao_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
+    approved_by: Mapped[int | None] = mapped_column("duyet_boi", Integer, ForeignKey("tai_khoan.ma_tai_khoan"))
     paid_at: Mapped[str | None] = mapped_column("thanh_toan_luc", DateTime(timezone=True))
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
 
@@ -551,10 +603,8 @@ class Supplier(Base):
     phone: Mapped[str | None] = mapped_column("so_dien_thoai", String(15))
     email: Mapped[str | None] = mapped_column("email", String(150))
     address: Mapped[str | None] = mapped_column("dia_chi", Text)
-    tax_code: Mapped[str | None] = mapped_column("ma_so_thue", String(50))
     notes: Mapped[str | None] = mapped_column("ghi_chu", Text)
     is_active: Mapped[bool] = mapped_column("dang_hop_tac", Boolean, default=True)
     created_at: Mapped[str] = mapped_column("tao_luc", DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[str] = mapped_column("cap_nhat_luc", DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
 

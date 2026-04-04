@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api } from "./api/http";
 import { useAuth } from "./auth";
@@ -108,7 +108,7 @@ function useDashboardData(role) {
       const requests = {
         patient: ["/api/v1/appointments", "/api/v1/doctors", "/api/v1/services", "/api/v1/invoices", "/api/v1/patients/me"],
         doctor: ["/api/v1/appointments", "/api/v1/patients", "/api/v1/medicines"],
-        pharmacist: ["/api/v1/medicines", "/api/v1/prescriptions", "/api/v1/invoices", "/api/v1/suppliers", "/api/v1/appointments/completed-no-invoice"],
+        pharmacist: ["/api/v1/medicines", "/api/v1/prescriptions", "/api/v1/invoices", "/api/v1/suppliers", "/api/v1/pharmacy-requests"],
         admin: ["/api/v1/reports/dashboard", "/api/v1/doctors", "/api/v1/medicines", "/api/v1/admin/accounts", "/api/v1/holidays", "/api/v1/admin/contracts"],
       }[role] || [];
 
@@ -136,6 +136,15 @@ function useDashboardData(role) {
   return { ...state, reload: load };
 }
 
+const PHARMACIST_TABS_BASE = [
+  { id: "donthuoccancap", label: "Đơn thuốc cần cấp" },
+  { id: "giaothuocthanhtoan", label: "Giao thuốc & thanh toán" },
+  { id: "lichsuthanhtoan", label: "Lịch sử thanh toán" },
+  { id: "khohang", label: "Kho hàng" },
+  { id: "nhacungcap", label: "Nhà cung cấp" },
+  { id: "lichsuxuatnhap", label: "Lịch sử xuất nhập" },
+];
+
 function PortalScreen({ role, title, subtitle, render }) {
   const { loading, error, data, reload } = useDashboardData(role);
 
@@ -154,14 +163,6 @@ function PortalScreen({ role, title, subtitle, render }) {
       { id: "lichsubenhnhan", label: "Lịch sử bệnh nhân" },
       { id: "lichlamviec", label: "Lịch làm việc" },
     ],
-    pharmacist: [
-      { id: "donthuoccancap", label: "Đơn thuốc cần cấp" },
-      { id: "giaothuocthanhtoan", label: "Giao thuốc & thanh toán" },
-      { id: "tonkho", label: "Tồn kho" },
-      { id: "nhapkho", label: "Nhập kho" },
-      { id: "nhacungcap", label: "Nhà cung cấp" },
-      { id: "lichsuxuatnhap", label: "Lịch sử xuất nhập" },
-    ],
     patient: [
       { id: "lichhencuatoi", label: "Lịch hẹn của tôi" },
       { id: "denghidichuyenlich", label: "Đề nghị dời lịch" },
@@ -171,14 +172,24 @@ function PortalScreen({ role, title, subtitle, render }) {
     ],
   };
 
-  const [activeTab, setActiveTab] = useState(TABS[role]?.[0]?.id || "tongquan");
+  const tabs = useMemo(() => {
+    if (role === "pharmacist") return PHARMACIST_TABS_BASE;
+    return TABS[role] || [];
+  }, [role]);
+
+  const [activeTab, setActiveTab] = useState(() => (role === "pharmacist" ? "donthuoccancap" : TABS[role]?.[0]?.id || "tongquan"));
+
+  useEffect(() => {
+    const ids = tabs.map((t) => t.id);
+    if (ids.length && !ids.includes(activeTab)) setActiveTab(ids[0]);
+  }, [tabs, activeTab]);
 
   return (
     <ProtectedRoleRoute role={role}>
       <DashboardLayout
         title={title}
         subtitle={subtitle}
-        tabs={TABS[role] || []}
+        tabs={tabs}
         activeTab={activeTab}
         onActiveTabChange={setActiveTab}
       >
@@ -289,7 +300,7 @@ export default function App() {
           <PortalScreen
             role="pharmacist"
             title="Điều khiển dược sĩ"
-            subtitle="Quản lý đơn thuốc, tồn kho, nhà cung cấp và thanh toán."
+            subtitle="Quản lý đơn thuốc, kho hàng, nhà cung cấp và thanh toán."
             render={({ loading, data, reload, activeTab }) => <PharmacistPortal loading={loading} data={data} reload={reload} activeTab={activeTab} />}
           />
         }

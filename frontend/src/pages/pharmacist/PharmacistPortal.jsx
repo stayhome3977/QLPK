@@ -1,9 +1,36 @@
 import { useState } from "react";
-import { api } from "../../api/http";
+import { api, downloadAuthenticatedFile } from "../../api/http";
 import { Alert, EmptyState, Field, Panel } from "../../components/shared/UI";
-import { currency, PRESCRIPTION_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "../../utils/helpers";
+import { currency, fmtDateTime, PAYMENT_STATUS_LABELS, PRESCRIPTION_STATUS_LABELS } from "../../utils/helpers";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+async function getErrorMessage(error, fallback) {
+  const detail = error.response?.data;
+
+  if (detail instanceof Blob) {
+    try {
+      const text = await detail.text();
+      const parsed = JSON.parse(text);
+      if (typeof parsed?.detail === "string" && parsed.detail.trim()) {
+        return parsed.detail;
+      }
+      if (text.trim()) {
+        return text;
+      }
+    } catch {
+      // Fall through to the default message when the blob body is unreadable.
+    }
+  }
+
+  if (typeof detail?.detail === "string" && detail.detail.trim()) {
+    return detail.detail;
+  }
+
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+
+  return fallback;
+}
 
 /* ─── helpers ─────────────────────────────────────────── */
 function ModalForm({ title, onClose, children }) {
@@ -25,7 +52,6 @@ function ModalForm({ title, onClose, children }) {
    ═══════════════════════════════════════════════════════ */
 function TabTongQuan({ loading, prescriptions, reload }) {
   const prepare = async (id) => { await api.patch(`/api/v1/prescriptions/${id}/prepare`); await reload(); };
-  const dispense = async (id) => { await api.patch(`/api/v1/prescriptions/${id}/dispense`); await reload(); };
 
   return (
     <Panel title="Đơn thuốc chờ cấp phát">
@@ -45,9 +71,6 @@ function TabTongQuan({ loading, prescriptions, reload }) {
                   <td><span className={`badge badge-${rx.status}`}>{PRESCRIPTION_STATUS_LABELS[rx.status] || rx.status}</span></td>
                   <td className="row-actions">
                     {rx.status === "pending" && <button className="pharm-btn secondary" onClick={() => prepare(rx.id)}>Chuẩn bị</button>}
-                    {["prepared", "awaiting_payment"].includes(rx.status) && (
-                      <button className="pharm-btn primary" onClick={() => dispense(rx.id)}>Giao thuốc</button>
-                    )}
                   </td>
                 </tr>
               ))}
@@ -63,7 +86,7 @@ function TabTongQuan({ loading, prescriptions, reload }) {
    TAB: Kho thuốc — CRUD + nhập lô
    ═══════════════════════════════════════════════════════ */
 const defaultMed = { name: "", generic_name: "", category: "Thuốc da liễu", unit: "viên", price_per_unit: 0, reorder_level: 10, manufacturer: "", storage_conditions: "", description: "" };
-const defaultBatch = { supplier_id: "", import_quantity: 0, import_price_per_unit: 0, manufacturing_date: "", expiry_date: "", batch_number: "", notes: "" };
+const defaultBatch = { import_quantity: 0 };
 
 function TabKhoThuoc({ loading, medicines, suppliers, reload }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -95,7 +118,7 @@ function TabKhoThuoc({ loading, medicines, suppliers, reload }) {
   const importBatch = async () => {
     setSaving(true); setError("");
     try {
-      await api.post(`/api/v1/medicines/${showBatch.id}/batches/import`, { ...batchForm, import_quantity: Number(batchForm.import_quantity), import_price_per_unit: Number(batchForm.import_price_per_unit) });
+      await api.post(`/api/v1/medicines/${showBatch.id}/batches/import`, { import_quantity: Number(batchForm.import_quantity), import_unit_cost: 0 });
       await reload(); setShowBatch(null); setBatchForm(defaultBatch);
     } catch (e) { setError(e.response?.data?.detail || "Nhập lô thất bại"); }
     setSaving(false);
@@ -163,20 +186,9 @@ function TabKhoThuoc({ loading, medicines, suppliers, reload }) {
       {/* Batch Import Modal */}
       {showBatch && (
         <ModalForm title={`Nhập lô — ${showBatch.name}`} onClose={() => setShowBatch(null)}>
-          <div className="pharm-form-grid">
-            <Field label="Nhà cung cấp">
-              <select value={batchForm.supplier_id} onChange={(e) => setBatchForm((p) => ({ ...p, supplier_id: e.target.value }))}>
-                <option value="">Không có</option>
-                {suppliers.filter((s) => s.is_active !== false).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Số lô"><input value={batchForm.batch_number} onChange={(e) => setBatchForm((p) => ({ ...p, batch_number: e.target.value }))} /></Field>
-            <Field label="Số lượng nhập *"><input type="number" value={batchForm.import_quantity} onChange={(e) => setBatchForm((p) => ({ ...p, import_quantity: e.target.value }))} /></Field>
-            <Field label="Giá nhập/đơn vị"><input type="number" value={batchForm.import_price_per_unit} onChange={(e) => setBatchForm((p) => ({ ...p, import_price_per_unit: e.target.value }))} /></Field>
-            <Field label="Ngày sản xuất"><input type="date" value={batchForm.manufacturing_date} onChange={(e) => setBatchForm((p) => ({ ...p, manufacturing_date: e.target.value }))} /></Field>
-            <Field label="Hạn sử dụng"><input type="date" value={batchForm.expiry_date} onChange={(e) => setBatchForm((p) => ({ ...p, expiry_date: e.target.value }))} /></Field>
-          </div>
-          <Field label="Ghi chú"><textarea value={batchForm.notes} onChange={(e) => setBatchForm((p) => ({ ...p, notes: e.target.value }))} rows={2} /></Field>
+          <Field label="Số lượng nhập thêm *">
+            <input type="number" value={batchForm.import_quantity} onChange={(e) => setBatchForm((p) => ({ ...p, import_quantity: e.target.value }))} />
+          </Field>
           {error && <Alert type="error">{error}</Alert>}
           <div className="pharm-modal-actions">
             <button className="pharm-btn ghost" onClick={() => setShowBatch(null)}>Hủy</button>
@@ -191,7 +203,7 @@ function TabKhoThuoc({ loading, medicines, suppliers, reload }) {
 /* ═══════════════════════════════════════════════════════
    TAB: Nhà cung cấp — CRUD
    ═══════════════════════════════════════════════════════ */
-const defaultSupplier = { name: "", contact_name: "", phone: "", email: "", address: "", tax_code: "", notes: "" };
+const defaultSupplier = { name: "", contact_name: "", phone: "", email: "", address: "", notes: "" };
 
 function TabNhaCungCap({ loading, suppliers, reload }) {
   const [showForm, setShowForm] = useState(false);
@@ -201,7 +213,7 @@ function TabNhaCungCap({ loading, suppliers, reload }) {
   const [error, setError] = useState("");
 
   const openAdd = () => { setForm(defaultSupplier); setEditItem(null); setError(""); setShowForm(true); };
-  const openEdit = (s) => { setEditItem(s); setForm({ name: s.name, contact_name: s.contact_name || "", phone: s.phone || "", email: s.email || "", address: s.address || "", tax_code: s.tax_code || "", notes: s.notes || "" }); setError(""); setShowForm(true); };
+  const openEdit = (s) => { setEditItem(s); setForm({ name: s.name, contact_name: s.contact_name || "", phone: s.phone || "", email: s.email || "", address: s.address || "", notes: s.notes || "" }); setError(""); setShowForm(true); };
 
   const save = async () => {
     setSaving(true); setError("");
@@ -231,7 +243,7 @@ function TabNhaCungCap({ loading, suppliers, reload }) {
           <div className="pharm-table-wrap">
             <table className="pharm-table">
               <thead>
-                <tr><th>Tên công ty</th><th>Người liên hệ</th><th>SĐT</th><th>Email</th><th>Mã số thuế</th><th>Thao tác</th></tr>
+                <tr><th>Tên công ty</th><th>Người liên hệ</th><th>SĐT</th><th>Email</th><th>Thao tác</th></tr>
               </thead>
               <tbody>
                 {activeSuppliers.map((s) => (
@@ -240,7 +252,6 @@ function TabNhaCungCap({ loading, suppliers, reload }) {
                     <td>{s.contact_name || "—"}</td>
                     <td>{s.phone || "—"}</td>
                     <td>{s.email || "—"}</td>
-                    <td>{s.tax_code || "—"}</td>
                     <td className="row-actions">
                       <button className="pharm-btn secondary sm" onClick={() => openEdit(s)}>Sửa</button>
                       <button className="pharm-btn danger sm" onClick={() => deactivate(s.id)}>Ẩn</button>
@@ -260,7 +271,6 @@ function TabNhaCungCap({ loading, suppliers, reload }) {
             <Field label="Người liên hệ"><input value={form.contact_name} onChange={(e) => setForm((p) => ({ ...p, contact_name: e.target.value }))} /></Field>
             <Field label="Số điện thoại"><input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} /></Field>
             <Field label="Email"><input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} /></Field>
-            <Field label="Mã số thuế"><input value={form.tax_code} onChange={(e) => setForm((p) => ({ ...p, tax_code: e.target.value }))} /></Field>
             <Field label="Địa chỉ"><input value={form.address} onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))} /></Field>
           </div>
           <Field label="Ghi chú"><textarea value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} rows={2} /></Field>
@@ -275,93 +285,231 @@ function TabNhaCungCap({ loading, suppliers, reload }) {
   );
 }
 
+const PAYMENT_METHOD_LABELS = {
+  cash: "Tiền mặt",
+  card: "Thẻ",
+  transfer: "Chuyển khoản",
+  qr: "Mã QR",
+  insurance_support: "Hỗ trợ nội bộ",
+  other: "Khác",
+};
+
+const TRANSACTION_STATUS_LABELS = {
+  pending: "Chờ xác nhận",
+  success: "Thành công",
+  failed: "Thất bại",
+  cancelled: "Đã hủy",
+};
+
+async function downloadInvoicePdf(invoiceId) {
+  await downloadAuthenticatedFile(`/api/v1/invoices/${invoiceId}/pdf`, `hoa-don-${invoiceId}.pdf`);
+}
+
+function InvoiceDetailModal({ invoice, onClose, onPrint }) {
+  const items = Array.isArray(invoice?.items) ? invoice.items : [];
+  const transactions = Array.isArray(invoice?.transactions) ? invoice.transactions : [];
+
+  return (
+    <ModalForm title={`Chi tiết ${invoice.invoice_number}`} onClose={onClose}>
+      <div className="invoice-detail-block">
+        <div className="invoice-detail-row">
+          <span>Bệnh nhân</span>
+          <strong>{invoice.patient_name || "—"}</strong>
+        </div>
+        <div className="invoice-detail-row">
+          <span>Mã bệnh nhân</span>
+          <strong>{invoice.patient_code || "—"}</strong>
+        </div>
+        <div className="invoice-detail-row">
+          <span>Thời gian thanh toán</span>
+          <strong>{fmtDateTime(invoice.paid_at || invoice.created_at)}</strong>
+        </div>
+        <div className="invoice-detail-row">
+          <span>Tổng thanh toán</span>
+          <strong>{currency(invoice.total_amount)}</strong>
+        </div>
+      </div>
+
+      <div className="pharm-detail-section">
+        <h4>Chi tiết phiếu từ `chi_tiet_hoa_don`</h4>
+        {items.length === 0 ? (
+          <EmptyState text="Phiếu này chưa có chi tiết hóa đơn." />
+        ) : (
+          <div className="pharm-table-wrap">
+            <table className="pharm-table">
+              <thead>
+                <tr>
+                  <th>Nội dung</th>
+                  <th>SL</th>
+                  <th>Đơn giá</th>
+                  <th>Thành tiền</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.description}</td>
+                    <td>{item.quantity}</td>
+                    <td>{currency(item.unit_price)}</td>
+                    <td>{currency(item.line_total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="pharm-detail-section">
+        <h4>Giao dịch thanh toán</h4>
+        {transactions.length === 0 ? (
+          <p className="text-muted">Chưa có giao dịch thanh toán nào.</p>
+        ) : (
+          <div className="pharm-table-wrap">
+            <table className="pharm-table">
+              <thead>
+                <tr>
+                  <th>Phương thức</th>
+                  <th>Số tiền</th>
+                  <th>Trạng thái</th>
+                  <th>Thời gian</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((tx) => (
+                  <tr key={tx.id}>
+                    <td>{PAYMENT_METHOD_LABELS[tx.payment_method] || tx.payment_method}</td>
+                    <td>{currency(tx.amount)}</td>
+                    <td>{TRANSACTION_STATUS_LABELS[tx.status] || tx.status}</td>
+                    <td>{fmtDateTime(tx.paid_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="pharm-modal-actions">
+        <button type="button" className="pharm-btn ghost" onClick={onClose}>
+          Đóng
+        </button>
+        <button type="button" className="pharm-btn primary" onClick={onPrint}>
+          In PDF
+        </button>
+      </div>
+    </ModalForm>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════
    TAB: Hóa đơn & thanh toán nhanh
    ═══════════════════════════════════════════════════════ */
-function TabHoaDon({ loading, prescriptions, medicines, invoices, reload }) {
-  const [activeRx, setActiveRx] = useState(null);
-  const [rxDetails, setRxDetails] = useState(null);
+function buildPaymentLines(ticket) {
+  if (!ticket) return [];
+  const lines = [];
+  if (Number(ticket.exam_fee || 0) > 0) {
+    lines.push({
+      key: "exam-fee",
+      group: "Phí khám",
+      description: "Phí khám bác sĩ",
+      quantity: 1,
+      unitPrice: Number(ticket.exam_fee || 0),
+      lineTotal: Number(ticket.exam_fee || 0),
+    });
+  }
+  (ticket.services || []).forEach((service) => {
+    lines.push({
+      key: `service-${service.id || service.service_id}`,
+      group: "Dịch vụ",
+      description: service.name,
+      quantity: Number(service.quantity || 1),
+      unitPrice: Number(service.unit_price || 0),
+      lineTotal: Number(service.line_total || 0),
+    });
+  });
+  (ticket.medicines || []).forEach((medicine) => {
+    lines.push({
+      key: `medicine-${medicine.id || medicine.medicine_id}`,
+      group: "Thuốc",
+      description: medicine.medicine_name || `Thuốc #${medicine.medicine_id}`,
+      quantity: Number(medicine.billed_quantity || medicine.quantity || 0),
+      unitPrice: Number(medicine.unit_price || 0),
+      lineTotal: Number(medicine.line_total || 0),
+    });
+  });
+  return lines;
+}
+
+function TabHoaDon({ loading, requests, invoices, reload }) {
+  const [activeRequest, setActiveRequest] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [confirmingInvoiceId, setConfirmingInvoiceId] = useState(null);
+  const [confirmingTarget, setConfirmingTarget] = useState(null);
+  const invoiceMap = new Map((invoices || []).map((invoice) => [String(invoice.id), invoice]));
 
-  const openPdf = (invoiceId) => {
-    window.open(`${API_BASE}/api/v1/invoices/${invoiceId}/pdf`, "_blank");
-  };
-
-  const payablePrescriptions = (prescriptions || []).filter((rx) => ["pending", "prepared", "awaiting_payment"].includes(rx.status));
-
-  const waitingInvoices = (invoices || []).filter((inv) =>
-    ["unpaid", "awaiting_confirmation", "partial"].includes(inv.payment_status)
+  const payableRequests = (requests || []).filter(
+    (ticket) =>
+      ticket.status !== "cancelled" &&
+      !["paid", "credit_approved"].includes(ticket.invoice_payment_status || "")
   );
 
-  const openCheckoutModal = async (rx) => {
-    setActiveRx(rx);
-    setRxDetails(null);
+  const openCheckoutModal = (ticket) => {
+    setActiveRequest(ticket);
     setPaymentMethod("cash");
     setError("");
-    try {
-      const { data } = await api.get(`/api/v1/prescriptions/${rx.id}`);
-      setRxDetails(data);
-    } catch (e) {
-      setError(e.response?.data?.detail || "Không thể tải chi tiết đơn thuốc");
-    }
   };
 
-  const computedLines = (rxDetails?.items || []).map((it) => {
-    const med = medicines.find((m) => String(m.id) === String(it.medicine_id));
-    const billedQty = it.reserved_quantity || it.quantity;
-    const lineTotal = Number(it.unit_price || 0) * billedQty;
-    return {
-      medicineName: med?.name || `Thuốc #${it.medicine_id}`,
-      quantity: billedQty,
-      unitPrice: Number(it.unit_price || 0),
-      lineTotal,
-    };
-  });
+  const computedLines = buildPaymentLines(activeRequest);
+  const computedTotal = computedLines.reduce((sum, line) => sum + (line.lineTotal || 0), 0);
 
-  const computedTotal = computedLines.reduce((sum, l) => sum + (l.lineTotal || 0), 0);
-
-  const checkoutAndExport = async () => {
-    if (!activeRx) return;
+  const downloadInvoicePdfOnly = async () => {
+    if (!activeRequest) return;
     setSaving(true);
     setError("");
     try {
-      const { data } = await api.post(`/api/v1/prescriptions/${activeRx.id}/checkout`, { payment_method: paymentMethod });
-      await reload();
-      setActiveRx(null);
-      setRxDetails(null);
-      openPdf(data.invoice_id);
+      // Check if there's already an existing invoice for this request
+      const existingInvoice = invoiceMap.get(String(activeRequest.invoice_id));
+      
+      if (existingInvoice) {
+        // Download PDF of existing invoice
+        await downloadInvoicePdf(existingInvoice.id);
+      } else {
+        setError("Không tìm thấy hóa đơn để tải. Vui lòng tạo hóa đơn trước.");
+      }
     } catch (e) {
-      setError(e.response?.data?.detail || "Thanh toán thất bại");
+      setError(await getErrorMessage(e, "Không thể tải PDF hóa đơn"));
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
-  const confirmInvoice = async (invoiceId) => {
-    setConfirmingInvoiceId(invoiceId);
+  const confirmRequestPaid = async (ticket) => {
+    const targetKey = `request-${ticket.id}`;
+    setConfirmingTarget(targetKey);
     try {
-      await api.patch(`/api/v1/invoices/${invoiceId}/confirm-transfer`);
+      await api.patch(`/api/v1/pharmacy-requests/${ticket.id}/confirm-paid`);
       await reload();
     } catch (e) {
       // eslint-disable-next-line no-alert
-      alert(e.response?.data?.detail || "Không thể xác nhận thanh toán");
+      alert(await getErrorMessage(e, "Không thể xác nhận đã thanh toán"));
     } finally {
-      setConfirmingInvoiceId(null);
+      setConfirmingTarget(null);
     }
   };
 
   return (
     <>
-      <Panel title="Danh sách phiếu đơn thuốc cần thanh toán">
+      <Panel title="Danh sách phiếu bác sĩ gửi dược sĩ cần thanh toán">
         <div className="pharm-toolbar">
-          <span className="pharm-count">{payablePrescriptions.length} phiếu</span>
+          <span className="pharm-count">{payableRequests.length} phiếu</span>
+          <span className="pharm-count">Mỗi phiếu đã gồm phí khám, dịch vụ đăng ký và thuốc của bệnh nhân.</span>
         </div>
         {loading ? (
           <p>Đang tải...</p>
-        ) : payablePrescriptions.length === 0 ? (
-          <EmptyState text="Chưa có phiếu đơn thuốc cần thanh toán." />
+        ) : payableRequests.length === 0 ? (
+          <EmptyState text="Chưa có phiếu bác sĩ gửi dược sĩ cần thanh toán." />
         ) : (
           <div className="pharm-table-wrap">
             <table className="pharm-table">
@@ -369,81 +517,244 @@ function TabHoaDon({ loading, prescriptions, medicines, invoices, reload }) {
                 <tr>
                   <th>Mã phiếu</th>
                   <th>Bệnh nhân</th>
-                  <th>Trạng thái</th>
+                  <th>Nội dung</th>
+                  <th>Hóa đơn</th>
+                  <th>Tổng tiền</th>
                   <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
-                {payablePrescriptions.map((rx) => (
-                  <tr key={rx.id}>
-                    <td>
-                      <strong>#{rx.id}</strong>
-                    </td>
-                    <td>{rx.patient_name || `BN #${rx.patient_id}`}</td>
-                    <td>
-                      <span className={`badge badge-${rx.status}`}>{PRESCRIPTION_STATUS_LABELS[rx.status] || rx.status}</span>
-                    </td>
-                    <td className="row-actions">
-                      <button className="pharm-btn primary sm" onClick={() => openCheckoutModal(rx)} disabled={saving}>
-                        Tạo hóa đơn
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {payableRequests.map((ticket) => {
+                  const linkedInvoice = ticket.invoice_id ? invoiceMap.get(String(ticket.invoice_id)) : null;
+                  return (
+                    <tr key={ticket.id}>
+                      <td>
+                        <strong>{ticket.request_number || `#${ticket.id}`}</strong>
+                      </td>
+                      <td>
+                        <strong>{ticket.patient_name || `BN #${ticket.patient_id}`}</strong>
+                        <div className="text-muted" style={{ marginTop: "4px" }}>
+                          {ticket.doctor_name || "—"}
+                        </div>
+                      </td>
+                      <td>
+                        <div>{ticket.services?.length || 0} dịch vụ</div>
+                        <div className="text-muted" style={{ marginTop: "4px" }}>
+                          {ticket.medicines?.length || 0} thuốc
+                        </div>
+                      </td>
+                      <td>
+                        <strong>{linkedInvoice?.invoice_number || "Chưa tạo"}</strong>
+                        {linkedInvoice ? (
+                          <div className="text-muted" style={{ marginTop: "4px" }}>
+                            {PAYMENT_STATUS_LABELS[linkedInvoice.payment_status] || linkedInvoice.payment_status}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td>{currency(ticket.total_amount)}</td>
+                      <td className="row-actions">
+                        <button type="button" className="pharm-btn primary sm" onClick={() => openCheckoutModal(ticket)} disabled={saving}>
+                          {linkedInvoice ? "Cập nhật hóa đơn" : "Tạo hóa đơn"}
+                        </button>
+                        {linkedInvoice ? (
+                          <button type="button" className="pharm-btn info sm" onClick={() => void downloadInvoicePdf(linkedInvoice.id)}>
+                            Tải PDF
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="pharm-btn secondary sm"
+                          onClick={() => confirmRequestPaid(ticket)}
+                          disabled={confirmingTarget === `request-${ticket.id}`}
+                        >
+                          {confirmingTarget === `request-${ticket.id}` ? "Đang xác nhận..." : "Xác nhận đã thanh toán"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Panel>
 
-      <Panel title="Danh sách chờ thanh toán">
+      {activeRequest && (
+        <ModalForm title={`${activeRequest.request_number || `Phiếu #${activeRequest.id}`} — Mẫu hóa đơn`} onClose={() => { setActiveRequest(null); }}>
+          <div className="invoice-detail-block">
+            <div className="invoice-detail-row">
+              <span>Bệnh nhân</span>
+              <strong>{activeRequest.patient_name || `BN #${activeRequest.patient_id}`}</strong>
+            </div>
+            <div className="invoice-detail-row">
+              <span>Bác sĩ</span>
+              <strong>{activeRequest.doctor_name || "—"}</strong>
+            </div>
+            <div className="invoice-detail-row">
+              <span>Tổng tiền dự kiến</span>
+              <strong>{currency(computedTotal)}</strong>
+            </div>
+          </div>
+
+          <div className="pharm-detail-section">
+            <h4>Mẫu chi tiết hóa đơn</h4>
+            {computedLines.length > 0 ? (
+              <div className="pharm-table-wrap">
+                <table className="pharm-table">
+                  <thead>
+                    <tr><th>Nhóm</th><th>Nội dung</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr>
+                  </thead>
+                  <tbody>
+                    {computedLines.map((line) => (
+                      <tr key={line.key}>
+                        <td>{line.group}</td>
+                        <td>{line.description}</td>
+                        <td>{line.quantity}</td>
+                        <td>{currency(line.unitPrice)}</td>
+                        <td>{currency(line.lineTotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState text="Phiếu này chưa có nội dung để lập hóa đơn." />
+            )}
+          </div>
+
+          <div className="pharm-form-grid" style={{ marginTop: "8px" }}>
+            <Field label="Phương thức thanh toán">
+              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                <option value="cash">Tiền mặt</option>
+                <option value="qr">Mã QR</option>
+              </select>
+            </Field>
+          </div>
+
+          <div className="invoice-detail-block" style={{ marginTop: "8px" }}>
+            <div className="invoice-detail-row">
+              <span>Tổng dịch vụ</span>
+              <strong>{currency(activeRequest.services_total)}</strong>
+            </div>
+            <div className="invoice-detail-row">
+              <span>Tổng thuốc</span>
+              <strong>{currency(activeRequest.medicines_total)}</strong>
+            </div>
+          </div>
+
+          {error && <Alert type="error">{error}</Alert>}
+          <div className="pharm-modal-actions">
+            <button type="button" className="pharm-btn ghost" onClick={() => { setActiveRequest(null); }}>
+              Đóng
+            </button>
+            <button type="button" className="pharm-btn primary" onClick={downloadInvoicePdfOnly} disabled={saving}>
+              {saving ? "Đang tải..." : "Tải PDF"}
+            </button>
+          </div>
+        </ModalForm>
+      )}
+    </>
+  );
+}
+/* ═══════════════════════════════════════════════════════
+   TAB: Lịch sử thanh toán — hóa đơn đã thanh toán
+   ═══════════════════════════════════════════════════════ */
+function TabLichSuThanhToan({ loading, invoices, reload }) {
+  const [query, setQuery] = useState("");
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const paidRows = [...(invoices || [])]
+    .filter((inv) => ["paid", "credit_approved"].includes(inv.payment_status) && Array.isArray(inv.items) && inv.items.length > 0)
+    .sort((a, b) => new Date(b.paid_at || b.created_at || 0) - new Date(a.paid_at || a.created_at || 0));
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = paidRows.filter((inv) => {
+    if (!normalizedQuery) return true;
+    const searchValue = [
+      inv.invoice_number,
+      inv.patient_name,
+      inv.patient_code,
+      inv.patient_phone,
+      ...(inv.items || []).map((item) => item.description),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return searchValue.includes(normalizedQuery);
+  });
+
+  const remove = async (id) => {
+    if (!confirm("Xóa hóa đơn này khỏi lịch sử thanh toán? Thuốc trong phiếu sẽ được cộng lại vào kho.")) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/api/v1/invoices/${id}`);
+      if (selectedInvoice?.id === id) setSelectedInvoice(null);
+      await reload();
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert(await getErrorMessage(e, "Không thể xóa hóa đơn"));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const printInvoice = async (invoiceId) => {
+    try {
+      await downloadInvoicePdf(invoiceId);
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert(await getErrorMessage(e, "Không thể tải PDF hóa đơn"));
+    }
+  };
+
+  return (
+    <>
+      <Panel title="Lịch sử thanh toán">
+        <div className="pharm-toolbar">
+          <span className="pharm-count">{filteredRows.length} phiếu đã thanh toán</span>
+          <input
+            className="pharm-search-input"
+            placeholder="Tìm theo mã phiếu, bệnh nhân, số điện thoại..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
         {loading ? (
           <p>Đang tải...</p>
-        ) : waitingInvoices.length === 0 ? (
-          <EmptyState text="Chưa có hóa đơn nào đang chờ thanh toán." />
+        ) : filteredRows.length === 0 ? (
+          <EmptyState text="Chưa có phiếu thanh toán phù hợp." />
         ) : (
           <div className="pharm-table-wrap">
             <table className="pharm-table">
               <thead>
                 <tr>
-                  <th>Mã HĐ</th>
+                  <th>Mã phiếu</th>
                   <th>Bệnh nhân</th>
-                  <th>Số tiền</th>
-                  <th>Trạng thái</th>
+                  <th>Thanh toán lúc</th>
+                  <th>Tổng tiền</th>
                   <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
-                {waitingInvoices.map((inv) => (
+                {filteredRows.map((inv) => (
                   <tr key={inv.id}>
                     <td>
                       <strong>{inv.invoice_number}</strong>
                     </td>
-                    <td>{inv.patient_id ? `BN #${inv.patient_id}` : "—"}</td>
+                    <td>{inv.patient_name || (inv.patient_id ? `BN #${inv.patient_id}` : "—")}</td>
+                    <td>{fmtDateTime(inv.paid_at || inv.created_at)}</td>
                     <td>{currency(inv.total_amount)}</td>
-                    <td>
-                      <span className={`badge badge-${inv.payment_status}`}>
-                        {inv.payment_status === "awaiting_confirmation"
-                          ? "Đang thanh toán"
-                          : PAYMENT_STATUS_LABELS[inv.payment_status] || inv.payment_status}
-                      </span>
-                    </td>
                     <td className="row-actions">
-                      <button
-                        className="pharm-btn secondary sm"
-                        onClick={() => openPdf(inv.id)}
-                      >
-                        PDF
+                      <button type="button" className="pharm-btn secondary sm" onClick={() => setSelectedInvoice(inv)}>
+                        Xem chi tiết
                       </button>
-                      {inv.payment_status !== "paid" && (
-                        <button
-                          className="pharm-btn primary sm"
-                          onClick={() => confirmInvoice(inv.id)}
-                          disabled={confirmingInvoiceId === inv.id}
-                        >
-                          {confirmingInvoiceId === inv.id ? "Đang xác nhận..." : "Xác nhận đã thanh toán"}
-                        </button>
-                      )}
+                      <button type="button" className="pharm-btn info sm" onClick={() => void printInvoice(inv.id)}>
+                        In PDF
+                      </button>
+                      <button type="button" className="pharm-btn danger sm" onClick={() => void remove(inv.id)} disabled={deletingId === inv.id}>
+                        {deletingId === inv.id ? "Đang xóa..." : "Xóa"}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -453,91 +764,13 @@ function TabHoaDon({ loading, prescriptions, medicines, invoices, reload }) {
         )}
       </Panel>
 
-      {activeRx && (
-        <ModalForm title={`Phiếu #${activeRx.id} — Thanh toán`} onClose={() => { setActiveRx(null); setRxDetails(null); }}>
-          <div className="invoice-detail-block">
-            <div className="invoice-detail-row">
-              <span>Bệnh nhân</span>
-              <strong>{activeRx.patient_name || `BN #${activeRx.patient_id}`}</strong>
-            </div>
-            <div className="invoice-detail-row">
-              <span>Tổng tiền</span>
-              <strong>{currency(computedTotal)}</strong>
-            </div>
-          </div>
-
-          {!rxDetails ? (
-            <p>Đang tải chi tiết...</p>
-          ) : (
-            <>
-              {computedLines.length > 0 && (
-                <>
-                  <h4 style={{ marginTop: "16px" }}>Tổng mỗi thuốc</h4>
-                  <table className="pharm-table">
-                    <thead>
-                      <tr><th>Thuốc</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr>
-                    </thead>
-                    <tbody>
-                      {computedLines.map((l, i) => (
-                        <tr key={i}>
-                          <td>{l.medicineName}</td>
-                          <td>{l.quantity}</td>
-                          <td>{currency(l.unitPrice)}</td>
-                          <td>{currency(l.lineTotal)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
-              <div className="pharm-form-grid" style={{ marginTop: "16px" }}>
-                <Field label="Phương thức">
-                  <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-                    <option value="cash">Tiền mặt</option>
-                    <option value="transfer">Chuyển khoản (QR giả)</option>
-                  </select>
-                </Field>
-              </div>
-
-              {paymentMethod === "transfer" && (
-                <div style={{ marginTop: "16px", textAlign: "center" }}>
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      padding: "12px",
-                      borderRadius: "8px",
-                      border: "1px dashed #999",
-                      background: "#fafafa",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 140,
-                        height: 140,
-                        backgroundImage:
-                          "repeating-linear-gradient(45deg, #000, #000 4px, #fff 4px, #fff 8px)",
-                      }}
-                    />
-                    <small style={{ marginTop: 8 }}>Mã QR giả lập để thanh toán</small>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {error && <Alert type="error">{error}</Alert>}
-          <div className="pharm-modal-actions">
-            <button className="pharm-btn ghost" onClick={() => { setActiveRx(null); setRxDetails(null); }}>
-              Đóng
-            </button>
-            <button className="pharm-btn primary" onClick={checkoutAndExport} disabled={saving || !rxDetails}>
-              {saving ? "Đang xử lý..." : "Xuất hóa đơn ra PDF"}
-            </button>
-          </div>
-        </ModalForm>
-      )}
+      {selectedInvoice ? (
+        <InvoiceDetailModal
+          invoice={selectedInvoice}
+          onClose={() => setSelectedInvoice(null)}
+          onPrint={() => void printInvoice(selectedInvoice.id)}
+        />
+      ) : null}
     </>
   );
 }
@@ -550,13 +783,15 @@ export function PharmacistPortal({ loading, data, reload, activeTab }) {
   const prescriptions = data["/api/v1/prescriptions"] || [];
   const suppliers = data["/api/v1/suppliers"] || [];
   const invoices = data["/api/v1/invoices"] || [];
+  const pharmacyRequests = data["/api/v1/pharmacy-requests"] || [];
 
   return (
     <div className="dashboard-sections">
       {activeTab === "donthuoccancap" && <TabTongQuan loading={loading} prescriptions={prescriptions} reload={reload} />}
-      {["tonkho", "nhapkho"].includes(activeTab) && <TabKhoThuoc loading={loading} medicines={medicines} suppliers={suppliers} reload={reload} />}
+      {["khohang", "tonkho", "nhapkho"].includes(activeTab) && <TabKhoThuoc loading={loading} medicines={medicines} suppliers={suppliers} reload={reload} />}
       {activeTab === "nhacungcap" && <TabNhaCungCap loading={loading} suppliers={suppliers} reload={reload} />}
-      {activeTab === "giaothuocthanhtoan" && <TabHoaDon loading={loading} prescriptions={prescriptions} medicines={medicines} invoices={invoices} reload={reload} />}
+      {activeTab === "giaothuocthanhtoan" && <TabHoaDon loading={loading} requests={pharmacyRequests} invoices={invoices} reload={reload} />}
+      {activeTab === "lichsuthanhtoan" && <TabLichSuThanhToan loading={loading} invoices={invoices} reload={reload} />}
       {activeTab === "lichsuxuatnhap" && (
         <Panel title="Chức năng trống">
           <EmptyState text="Chức năng này đang được phát triển hoặc chưa có dữ liệu." />

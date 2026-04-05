@@ -6,7 +6,7 @@ import qrcode
 from PIL import Image as PILImage
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
@@ -49,6 +49,8 @@ from app.models.entities import (
     PharmacyRequest,
     PharmacyRequestStatus,
     Prescription,
+    PrescriptionItem,
+    PrescriptionItemAllocation,
     PrescriptionStatus,
     RoleEnum,
     Service,
@@ -1718,15 +1720,16 @@ def create_follow_up_appointment(
 @router.delete("/api/v1/appointments/{appointment_id}")
 def cancel_appointment(appointment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     appointment = get_appointment_or_404(db, appointment_id)
-    appointment.status = AppointmentStatus.cancelled
-    appointment.cancelled_by = current_user.id
-    appointment.cancelled_at = utcnow()
-    appointment.cancel_reason = "cancelled by user"
+    
+    # Delete related pharmacy requests first
     request = db.query(PharmacyRequest).filter(PharmacyRequest.appointment_id == appointment_id).first()
     if request:
-        request.status = PharmacyRequestStatus.cancelled
+        db.delete(request)
+    
+    # Delete the appointment completely
+    db.delete(appointment)
     db.commit()
-    return {"message": "Đã hủy lịch hẹn"}
+    return {"message": "Đã xóa lịch hẹn"}
 
 
 # ============================================================
@@ -2170,8 +2173,8 @@ def import_batch(
         import_quantity=payload.import_quantity,
         remaining_quantity=payload.import_quantity,
         reserved_quantity=0,
-        import_unit_cost=float(payload.import_unit_cost or 0),
-        supplier_id=None,
+        import_unit_cost=0,
+        supplier_id=payload.supplier_id,
     )
     db.add(batch)
     db.flush()
@@ -2187,6 +2190,7 @@ def import_batch(
             quantity_after=medicine.current_stock,
             reference_id=batch.id,
             reference_type="batch_import",
+            notes=payload.notes,
         )
     )
     db.commit()
@@ -2387,6 +2391,71 @@ def settle_prescription_inventory(
     db.flush()
 
 
+def settle_invoice_medicine_inventory(db: Session, invoice: Invoice, user_id: int) -> None:
+    """Deduct medicine stock directly from invoice items (for medicines not in prescription)"""
+    medicine_items = (
+        db.query(InvoiceItem)
+        .filter(InvoiceItem.invoice_id == invoice.id, InvoiceItem.item_type == INVOICE_ITEM_TYPE_MEDICINE)
+        .all()
+    )
+    if not medicine_items:
+        return
+    
+    for item in medicine_items:
+        medicine = db.query(Medicine).filter(Medicine.id == item.reference_id).first()
+        if not medicine:
+            continue
+        
+        # Find available batches for this medicine (FIFO: first expiry first)
+        available_batches = (
+            db.query(MedicineBatch)
+            .filter(
+                MedicineBatch.medicine_id == item.reference_id,
+                MedicineBatch.remaining_quantity > 0,
+                MedicineBatch.is_active.is_(True)
+            )
+            .order_by(MedicineBatch.expiry_date.asc().nulls_last(), MedicineBatch.created_at.asc())
+            .all()
+        )
+        
+        if not available_batches:
+            raise HTTPException(status_code=400, detail=f"Tồn kho không đủ cho thuốc: {medicine.name}")
+        
+        remaining_qty = item.quantity
+        for batch in available_batches:
+            if remaining_qty <= 0:
+                break
+            
+            qty_to_deduct = min(remaining_qty, batch.remaining_quantity)
+            before = batch.remaining_quantity
+            batch.remaining_quantity -= qty_to_deduct
+            remaining_qty -= qty_to_deduct
+            
+            # Update medicine stock
+            recompute_medicine_stock(db, medicine.id)
+            
+            # Create inventory log
+            db.add(
+                InventoryLog(
+                    medicine_id=medicine.id,
+                    batch_id=batch.id,
+                    user_id=user_id,
+                    action=InventoryAction.export,
+                    quantity_change=-qty_to_deduct,
+                    quantity_before=before,
+                    quantity_after=batch.remaining_quantity,
+                    reference_id=invoice.id,
+                    reference_type="invoice_payment",
+                    notes=f"Xuất kho khi thanh toán hóa đơn: {medicine.name}",
+                )
+            )
+        
+        if remaining_qty > 0:
+            raise HTTPException(status_code=400, detail=f"Tồn kho không đủ cho thuốc: {medicine.name}")
+    
+    db.flush()
+
+
 def restore_prescription_inventory(db: Session, prescription: Prescription, user_id: int, reference_id: int) -> None:
     items = db.query(PrescriptionItem).filter(PrescriptionItem.prescription_id == prescription.id).all()
     for item in items:
@@ -2425,6 +2494,58 @@ def restore_prescription_inventory(db: Session, prescription: Prescription, user
     prescription.dispensed_at = None
     prescription.picked_up_at = None
     prescription.status = PrescriptionStatus.pending
+    db.flush()
+
+
+def restore_invoice_medicine_inventory(db: Session, invoice: Invoice, user_id: int) -> None:
+    """Restore medicine stock from invoice items when invoice is deleted"""
+    medicine_items = (
+        db.query(InvoiceItem)
+        .filter(InvoiceItem.invoice_id == invoice.id, InvoiceItem.item_type == INVOICE_ITEM_TYPE_MEDICINE)
+        .all()
+    )
+    if not medicine_items:
+        return
+    
+    for item in medicine_items:
+        medicine = db.query(Medicine).filter(Medicine.id == item.reference_id).first()
+        if not medicine:
+            continue
+        
+        # Find inventory logs for this invoice item to determine what was deducted
+        inventory_logs = (
+            db.query(InventoryLog)
+            .filter(
+                InventoryLog.reference_id == invoice.id,
+                InventoryLog.reference_type == "invoice_payment",
+                InventoryLog.medicine_id == item.reference_id
+            )
+            .all()
+        )
+        
+        for log in inventory_logs:
+            batch = db.query(MedicineBatch).filter(MedicineBatch.id == log.batch_id).first()
+            if batch and log.quantity_change < 0:  # Only restore exported items
+                before = batch.remaining_quantity
+                batch.remaining_quantity += abs(log.quantity_change)
+                recompute_medicine_stock(db, medicine.id)
+                
+                # Create inventory log for restoration
+                db.add(
+                    InventoryLog(
+                        medicine_id=medicine.id,
+                        batch_id=batch.id,
+                        user_id=user_id,
+                        action=InventoryAction.import_return,
+                        quantity_change=abs(log.quantity_change),
+                        quantity_before=before,
+                        quantity_after=batch.remaining_quantity,
+                        reference_id=invoice.id,
+                        reference_type="invoice_delete",
+                        notes=f"Hoàn kho khi xóa hóa đơn: {medicine.name}",
+                    )
+                )
+    
     db.flush()
 
 
@@ -2528,6 +2649,8 @@ def delete_invoice(
     prescription = get_prescription_by_appointment(db, invoice.appointment_id)
     if prescription and prescription.status in {PrescriptionStatus.dispensed, PrescriptionStatus.partially_dispensed}:
         restore_prescription_inventory(db, prescription, current_user.id, invoice.id)
+    # Also restore direct invoice medicine items (not in prescription)
+    restore_invoice_medicine_inventory(db, invoice, current_user.id)
     request = db.query(PharmacyRequest).filter(PharmacyRequest.appointment_id == invoice.appointment_id).first()
     db.delete(invoice)
     if request:
@@ -2543,9 +2666,16 @@ def pay_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["pharmacist", "admin"])),
 ):
+    print(f"PAYMENT DEBUG: Processing payment for invoice {invoice_id}")
+    print(f"PAYMENT DEBUG: Payment method: {payload.payment_method}")
+    print(f"PAYMENT DEBUG: Amount: {payload.amount}")
+    
     invoice = get_invoice_or_404(db, invoice_id)
     method = PaymentMethod(payload.payment_method)
-    tx_status = TransactionStatus.pending if method == PaymentMethod.transfer else TransactionStatus.success
+    tx_status = TransactionStatus.pending if method in [PaymentMethod.transfer, PaymentMethod.qr] else TransactionStatus.success
+    
+    print(f"PAYMENT DEBUG: Transaction status: {tx_status}")
+    
     tx = PaymentTransaction(
         invoice_id=invoice.id,
         transaction_type=TransactionType.payment,
@@ -2565,10 +2695,18 @@ def pay_invoice(
         prescription = get_prescription_by_appointment(db, invoice.appointment_id)
         if prescription and invoice.payment_status in {PaymentStatus.paid, PaymentStatus.credit_approved}:
             settle_prescription_inventory(db, prescription, current_user.id, reference_type="invoice_payment")
+        # Also handle direct invoice medicine items (not in prescription)
+        if invoice.payment_status in {PaymentStatus.paid, PaymentStatus.credit_approved}:
+            settle_invoice_medicine_inventory(db, invoice, current_user.id)
     request = db.query(PharmacyRequest).filter(PharmacyRequest.appointment_id == invoice.appointment_id).first()
     if request:
         sync_pharmacy_request_status(db, request)
     db.commit()
+    
+    print(f"PAYMENT DEBUG: Transaction committed to database")
+    print(f"PAYMENT DEBUG: Transaction ID: {tx.id}")
+    print(f"PAYMENT DEBUG: Payment method: {tx.payment_method.value}")
+    
     return serialize_invoice(db, invoice)
 
 
@@ -2589,6 +2727,9 @@ def confirm_transfer(invoice_id: int, db: Session = Depends(get_db), current_use
     prescription = get_prescription_by_appointment(db, invoice.appointment_id)
     if prescription and invoice.payment_status in {PaymentStatus.paid, PaymentStatus.credit_approved}:
         settle_prescription_inventory(db, prescription, current_user.id, reference_type="invoice_payment")
+    # Also handle direct invoice medicine items (not in prescription)
+    if invoice.payment_status in {PaymentStatus.paid, PaymentStatus.credit_approved}:
+        settle_invoice_medicine_inventory(db, invoice, current_user.id)
     request = db.query(PharmacyRequest).filter(PharmacyRequest.appointment_id == invoice.appointment_id).first()
     if request:
         sync_pharmacy_request_status(db, request)
@@ -2611,6 +2752,8 @@ def approve_credit(
     if prescription:
         ensure_prescription_ready_for_checkout(db, prescription, current_user.id)
         settle_prescription_inventory(db, prescription, current_user.id, reference_type="invoice_payment")
+    # Also handle direct invoice medicine items (not in prescription)
+    settle_invoice_medicine_inventory(db, invoice, current_user.id)
     request = db.query(PharmacyRequest).filter(PharmacyRequest.appointment_id == invoice.appointment_id).first()
     if request:
         sync_pharmacy_request_status(db, request)
@@ -2842,11 +2985,10 @@ def build_invoice_pdf(invoice_data: dict, include_qr_for_payment_method: str | N
 
     # Check if there's a transfer or QR payment method in existing transactions
     # OR if we're generating PDF for a new QR payment
-    # OR always generate for testing (remove this line in production)
     has_transfer_or_qr = any(
         tx.get("payment_method") in ["transfer", "qr"] 
         for tx in invoice_data.get("transactions", [])
-    ) or include_qr_for_payment_method in ["transfer", "qr"] or True  # Always generate QR for testing
+    ) or include_qr_for_payment_method in ["transfer", "qr"]
     
     # Debug logging
     print(f"PDF Generation - has_transfer_or_qr: {has_transfer_or_qr}")
@@ -3318,3 +3460,71 @@ def read_all_notifications(db: Session = Depends(get_db), current_user: User = D
     db.query(Notification).filter(Notification.user_id == current_user.id, Notification.is_read.is_(False)).update({"is_read": True})
     db.commit()
     return {"message": "Đã đánh dấu tất cả là đã đọc"}
+
+
+@router.get("/api/v1/inventory-logs")
+def list_inventory_logs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin", "pharmacist"])),
+    limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
+    medicine_id: int | None = Query(default=None),
+    action: str | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+):
+    """Lấy lịch sử xuất nhập kho"""
+    query = db.query(InventoryLog).join(Medicine, InventoryLog.medicine_id == Medicine.id)
+    
+    if medicine_id:
+        query = query.filter(InventoryLog.medicine_id == medicine_id)
+    
+    if action:
+        query = query.filter(InventoryLog.action == action)
+    
+    if date_from:
+        try:
+            from datetime import datetime
+            date_from_dt = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+            query = query.filter(InventoryLog.created_at >= date_from_dt)
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            from datetime import datetime
+            date_to_dt = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+            query = query.filter(InventoryLog.created_at <= date_to_dt)
+        except ValueError:
+            pass
+    
+    total = query.count()
+    logs = query.order_by(InventoryLog.created_at.desc()).offset(offset).limit(limit).all()
+    
+    result = []
+    for log in logs:
+        user = db.query(User).filter(User.id == log.user_id).first()
+        medicine = db.query(Medicine).filter(Medicine.id == log.medicine_id).first()
+        result.append({
+            "id": log.id,
+            "medicine_id": log.medicine_id,
+            "medicine_name": medicine.name if medicine else 'N/A',
+            "batch_id": log.batch_id,
+            "user_id": log.user_id,
+            "user_name": user.full_name if user else 'N/A',
+            "action": log.action,
+            "quantity_change": log.quantity_change,
+            "quantity_before": log.quantity_before,
+            "quantity_after": log.quantity_after,
+            "reference_id": log.reference_id,
+            "reference_type": log.reference_type,
+            "notes": log.notes,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        })
+    
+    return {
+        "items": result,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }

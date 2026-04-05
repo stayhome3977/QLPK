@@ -8,14 +8,26 @@ export function CashierPortal({ data, reload, runAction }) {
   const [inv, setInv] = useState({ appointment_id: "", discount_amount: 0, insurance_support_amount: 0 });
   const [pay, setPay] = useState({ invoice_id: "", payment_method: "cash", amount: "" });
 
-  const genInv = () => runAction(() => api.post(`/api/v1/invoices/generate/${inv.appointment_id}`, {
-    discount_amount: Number(inv.discount_amount),
-    insurance_support_amount: Number(inv.insurance_support_amount)
-  }));
+  const genInv = () => {
+    if (!inv.appointment_id) {
+      alert("Vui lòng nhập mã lịch hẹn");
+      return;
+    }
+    runAction(() => api.post(`/api/v1/invoices/generate/${inv.appointment_id}`, {
+      discount_amount: Number(inv.discount_amount),
+      insurance_support_amount: Number(inv.insurance_support_amount)
+    }));
+  };
 
-  const payInv = () => runAction(() => api.patch(`/api/v1/invoices/${pay.invoice_id}/pay`, {
-    payment_method: pay.payment_method, amount: Number(pay.amount)
-  }));
+  const payInv = () => {
+    if (!pay.invoice_id) {
+      alert("Vui lòng nhập mã hóa đơn");
+      return;
+    }
+    runAction(() => api.patch(`/api/v1/invoices/${pay.invoice_id}/pay`, {
+      payment_method: pay.payment_method, amount: Number(pay.amount)
+    }));
+  };
 
   const approveCredit = (id) => runAction(() => api.patch(`/api/v1/invoices/${id}/approve-credit`));
   const downloadInvoicePdf = (id) => runAction(() => downloadAuthenticatedFile(`/api/v1/invoices/${id}/pdf`, `hoa-don-${id}.pdf`));

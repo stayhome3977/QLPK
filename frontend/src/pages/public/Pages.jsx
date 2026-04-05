@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../../api/http";
 import { useAuth } from "../../auth";
 import { Alert, Field } from "../../components/shared/UI";
@@ -70,8 +70,10 @@ export function LoginPage() {
       setLoading(true);
       setError("");
       await api.post("/api/v1/auth/register", registerForm);
-      await login(registerForm.email, registerForm.password);
-      navigate("/patient", { replace: true });
+      
+      // Redirect to verification page instead of trying to login immediately
+      navigate(`/verify-email?email=${encodeURIComponent(registerForm.email)}`, { replace: true });
+      
     } catch (err) {
       setError(getErrorMessage(err, "Đăng ký thất bại"));
     } finally {
@@ -142,6 +144,12 @@ export function LoginPage() {
             <button className="primary-button" disabled={loading}>
               {loading ? "Đang xử lý..." : "Đăng nhập"}
             </button>
+            
+            <div style={{ textAlign: "center", marginTop: "1rem" }}>
+              <Link to="/reset-password" className="ghost-button">
+                Quên mật khẩu?
+              </Link>
+            </div>
           </form>
         ) : (
           <form onSubmit={submitRegister} className="auth-form">
@@ -208,6 +216,288 @@ export function ServicesPage() {
             </Link>
           ))}
         </div>
+      </section>
+    </main>
+  );
+}
+
+export function EmailVerificationPage() {
+  const [searchParams] = useSearchParams();
+  const email = searchParams.get("email") || "";
+  const [form, setForm] = useState({ email, code: "" });
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const submitVerification = async (event) => {
+    event.preventDefault();
+    try {
+      setLoading(true);
+      setError("");
+      setSuccess("");
+      
+      await api.post("/api/v1/auth/verify-email", {
+        email: form.email,
+        code: form.code
+      });
+      
+      setSuccess("Xác thực email thành công! Đang chuyển hướng...");
+      setTimeout(() => {
+        navigate("/login", { replace: true });
+      }, 2000);
+      
+    } catch (err) {
+      setError(getErrorMessage(err, "Xác thực thất bại"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendCode = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      setSuccess("");
+      
+      await api.post("/api/v1/auth/send-verification", {
+        email: form.email,
+        full_name: "" // Backend sẽ lấy từ database
+      });
+      
+      setSuccess("Mã xác thực mới đã được gửi! Vui lòng kiểm tra email.");
+      
+    } catch (err) {
+      setError(getErrorMessage(err, "Không thể gửi lại mã xác thực"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="auth-page">
+      <section className="auth-visual">
+        <span className="eyebrow">Xác thực tài khoản</span>
+        <h1>Xác thực email của bạn</h1>
+        <p>Nhập mã 6 số đã được gửi đến email của bạn để hoàn tất đăng ký tài khoản.</p>
+        <div className="verification-info">
+          <strong>Email:</strong> {form.email}
+        </div>
+      </section>
+
+      <section className="auth-card">
+        <form onSubmit={submitVerification} className="auth-form">
+          <Field label="Mã xác thực (6 số)">
+            <input 
+              type="text" 
+              value={form.code} 
+              onChange={(e) => setForm((p) => ({ ...p, code: e.target.value.replace(/\D/g, '').slice(0, 6) }))} 
+              placeholder="Nhập 6 số"
+              maxLength={6}
+              style={{ fontSize: "1.5rem", textAlign: "center", letterSpacing: "0.5em" }}
+            />
+          </Field>
+          
+          {error ? <Alert type="error">{error}</Alert> : null}
+          {success ? <Alert type="success">{success}</Alert> : null}
+          
+          <button className="primary-button" disabled={loading || form.code.length !== 6}>
+            {loading ? "Đang xử lý..." : "Xác thực"}
+          </button>
+          
+          <div style={{ textAlign: "center", marginTop: "1rem" }}>
+            <p style={{ marginBottom: "0.5rem", color: "#667085" }}>
+              Không nhận được mã?
+            </p>
+            <button 
+              type="button" 
+              className="ghost-button" 
+              onClick={resendCode}
+              disabled={loading}
+            >
+              Gửi lại mã
+            </button>
+          </div>
+          
+          <div style={{ textAlign: "center", marginTop: "1rem" }}>
+            <Link to="/login" className="ghost-button">
+              Quay lại đăng nhập
+            </Link>
+          </div>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+export function PasswordResetPage() {
+  const [searchParams] = useSearchParams();
+  const email = searchParams.get("email") || "";
+  const [form, setForm] = useState({ email, code: "", new_password: "", confirm_password: "" });
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState(email ? "reset" : "request"); // "request" or "reset"
+  const navigate = useNavigate();
+
+  const submitRequest = async (event) => {
+    event.preventDefault();
+    try {
+      setLoading(true);
+      setError("");
+      
+      await api.post("/api/v1/auth/forgot-password", {
+        email: form.email
+      });
+      
+      setSuccess("Mã đặt lại mật khẩu đã được gửi! Vui lòng kiểm tra email.");
+      setStep("reset");
+      
+    } catch (err) {
+      setError(getErrorMessage(err, "Không thể gửi mã đặt lại mật khẩu"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitReset = async (event) => {
+    event.preventDefault();
+    
+    if (form.new_password !== form.confirm_password) {
+      setError("Mật khẩu mới và xác nhận mật khẩu không khớp!");
+      return;
+    }
+    
+    if (form.new_password.length < 8) {
+      setError("Mật khẩu phải có ít nhất 8 ký tự!");
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError("");
+      setSuccess("");
+      
+      await api.post("/api/v1/auth/reset-password", {
+        email: form.email,
+        code: form.code,
+        new_password: form.new_password
+      });
+      
+      setSuccess("Đặt lại mật khẩu thành công! Đang chuyển hướng...");
+      setTimeout(() => {
+        navigate("/login", { replace: true });
+      }, 2000);
+      
+    } catch (err) {
+      setError(getErrorMessage(err, "Đặt lại mật khẩu thất bại"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="auth-page">
+      <section className="auth-visual">
+        <span className="eyebrow">Đặt lại mật khẩu</span>
+        <h1>{step === "request" ? "Quên mật khẩu?" : "Nhập mã xác thực"}</h1>
+        {step === "request" ? (
+          <p>Nhập email của bạn để nhận mã đặt lại mật khẩu.</p>
+        ) : (
+          <p>Nhập mã 6 số đã được gửi đến email của bạn để đặt lại mật khẩu.</p>
+        )}
+        {step === "reset" && (
+          <div className="verification-info">
+            <strong>Email:</strong> {form.email}
+          </div>
+        )}
+      </section>
+
+      <section className="auth-card">
+        {step === "request" ? (
+          <form onSubmit={submitRequest} className="auth-form">
+            <Field label="Email">
+              <input 
+                type="email" 
+                value={form.email} 
+                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} 
+                placeholder="Nhập email của bạn"
+                required
+              />
+            </Field>
+            
+            {error ? <Alert type="error">{error}</Alert> : null}
+            {success ? <Alert type="success">{success}</Alert> : null}
+            
+            <button className="primary-button" disabled={loading}>
+              {loading ? "Đang xử lý..." : "Gửi mã đặt lại"}
+            </button>
+            
+            <div style={{ textAlign: "center", marginTop: "1rem" }}>
+              <Link to="/login" className="ghost-button">
+                Quay lại đăng nhập
+              </Link>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={submitReset} className="auth-form">
+            <Field label="Mã xác thực (6 số)">
+              <input 
+                type="text" 
+                value={form.code} 
+                onChange={(e) => setForm((p) => ({ ...p, code: e.target.value.replace(/\D/g, '').slice(0, 6) }))} 
+                placeholder="Nhập 6 số"
+                maxLength={6}
+                style={{ fontSize: "1.5rem", textAlign: "center", letterSpacing: "0.5em" }}
+                required
+              />
+            </Field>
+            
+            <Field label="Mật khẩu mới">
+              <input 
+                type="password" 
+                value={form.new_password} 
+                onChange={(e) => setForm((p) => ({ ...p, new_password: e.target.value }))} 
+                placeholder="Nhập mật khẩu mới (tối thiểu 8 ký tự)"
+                required
+              />
+            </Field>
+            
+            <Field label="Xác nhận mật khẩu">
+              <input 
+                type="password" 
+                value={form.confirm_password} 
+                onChange={(e) => setForm((p) => ({ ...p, confirm_password: e.target.value }))} 
+                placeholder="Nhập lại mật khẩu mới"
+                required
+              />
+            </Field>
+            
+            {error ? <Alert type="error">{error}</Alert> : null}
+            {success ? <Alert type="success">{success}</Alert> : null}
+            
+            <button className="primary-button" disabled={loading || form.code.length !== 6}>
+              {loading ? "Đang xử lý..." : "Đặt lại mật khẩu"}
+            </button>
+            
+            <div style={{ textAlign: "center", marginTop: "1rem" }}>
+              <button 
+                type="button" 
+                className="ghost-button" 
+                onClick={() => setStep("request")}
+                disabled={loading}
+              >
+                Gửi lại mã
+              </button>
+            </div>
+            
+            <div style={{ textAlign: "center", marginTop: "1rem" }}>
+              <Link to="/login" className="ghost-button">
+                Quay lại đăng nhập
+              </Link>
+            </div>
+          </form>
+        )}
       </section>
     </main>
   );

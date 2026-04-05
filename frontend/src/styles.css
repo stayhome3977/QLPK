@@ -58,6 +58,10 @@ textarea {
   justify-content: space-between;
   align-items: center;
   padding: 18px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
 }
 
 .public-footer {
@@ -1071,6 +1075,7 @@ textarea {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+  height: 48px;
 }
 .pharm-table tr:last-child td {
   border-bottom: none;
@@ -1085,6 +1090,8 @@ textarea {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  min-height: 36px;
+  align-items: center;
 }
 
 /* Pharmacy Buttons */
@@ -1129,6 +1136,25 @@ textarea {
 .pharm-count {
   font-size: 0.88rem;
   color: var(--muted);
+}
+.pharm-filters {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.pharm-search, .pharm-filter {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: white;
+  font-size: 0.9rem;
+}
+.pharm-search {
+  min-width: 240px;
+}
+.pharm-filter {
+  min-width: 160px;
 }
 .pharm-search-input {
   min-width: min(360px, 100%);
@@ -1220,6 +1246,17 @@ textarea {
 .badge-awaiting_payment, .badge-partially_paid { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
 .badge-unpaid, .badge-partial, .badge-awaiting_confirmation { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
 .badge-warn { background: rgba(228, 88, 88, 0.1); color: var(--red); border-radius: 6px; padding: 2px 8px; }
+
+/* Inventory action badges */
+.badge-import { background: rgba(32, 178, 107, 0.12); color: #116840; }
+.badge-export { background: rgba(228, 88, 88, 0.12); color: #9a2c2c; }
+.badge-adjust { background: rgba(244, 183, 64, 0.15); color: #7a5900; }
+.badge-expired { background: rgba(108, 117, 125, 0.12); color: #495057; }
+.badge-import_return { background: rgba(36, 116, 216, 0.12); color: var(--primary); }
+
+/* Text colors for quantity changes */
+.text-success { color: var(--green); font-weight: 600; }
+.text-danger { color: var(--red); font-weight: 600; }
 
 /* Invoice detail block */
 .invoice-detail-block {

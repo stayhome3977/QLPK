@@ -7,7 +7,9 @@ import { ROLE_LABELS, roleHome } from "./utils/helpers";
 import {
   BookingPage,
   DoctorsPage,
+  EmailVerificationPage,
   LoginPage,
+  PasswordResetPage,
   ServicesPage,
 } from "./pages/public/Pages";
 import { Header } from "./components/Home/Header/Header";
@@ -108,7 +110,7 @@ function useDashboardData(role) {
       const requests = {
         patient: ["/api/v1/appointments", "/api/v1/doctors", "/api/v1/services", "/api/v1/invoices", "/api/v1/patients/me"],
         doctor: ["/api/v1/appointments", "/api/v1/patients", "/api/v1/medicines"],
-        pharmacist: ["/api/v1/medicines", "/api/v1/prescriptions", "/api/v1/invoices", "/api/v1/suppliers", "/api/v1/pharmacy-requests"],
+        pharmacist: ["/api/v1/medicines", "/api/v1/prescriptions", "/api/v1/invoices", "/api/v1/suppliers", "/api/v1/pharmacy-requests", "/api/v1/inventory-logs"],
         admin: ["/api/v1/reports/dashboard", "/api/v1/doctors", "/api/v1/medicines", "/api/v1/admin/accounts", "/api/v1/holidays", "/api/v1/admin/contracts"],
       }[role] || [];
 
@@ -268,6 +270,22 @@ export default function App() {
         element={
           <PublicLayout>
             <LoginRoute />
+          </PublicLayout>
+        }
+      />
+      <Route
+        path="/verify-email"
+        element={
+          <PublicLayout>
+            <EmailVerificationPage />
+          </PublicLayout>
+        }
+      />
+      <Route
+        path="/reset-password"
+        element={
+          <PublicLayout>
+            <PasswordResetPage />
           </PublicLayout>
         }
       />

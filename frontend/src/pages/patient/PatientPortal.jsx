@@ -107,7 +107,7 @@ export function PatientPortal({ loading, data, reload, activeTab }) {
                   {appointment.proposal?.note ? <span>Đề nghị từ bác sĩ: {appointment.proposal.note}</span> : null}
                 </div>
                 <div className="row-actions">
-                  {appointment.status !== "confirmed" ? (
+                  {appointment.status !== "confirmed" && !appointment.proposal ? (
                     <Link to={`/booking/${appointment.doctor_id}`} className="secondary-link button-link">
                       Đặt lại
                     </Link>

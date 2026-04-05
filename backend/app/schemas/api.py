@@ -44,14 +44,24 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=8)
-    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    phone: str | None = Field(default=None, min_length=10, max_length=15)
     date_of_birth: date | None = None
     gender: str | None = None
     address: str | None = None
-
+    
+    @field_validator('phone')
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None:
+            return v
+        # Allow various phone formats
+        if not re.match(r'^[0-9+\-\s()]+$', v):
+            raise ValueError('Số điện thoại không hợp lệ')
+        return v
+    
     @field_validator('password')
     @classmethod
-    def validate_password(cls, v: str) -> str:
+    def validate_password(cls, v):
         return _validate_password(v)
 
 
@@ -321,7 +331,8 @@ class MedicineCreate(BaseModel):
 
 class MedicineBatchImport(BaseModel):
     import_quantity: int = Field(ge=1)
-    import_unit_cost: float = Field(default=0, ge=0)
+    supplier_id: int | None = None
+    notes: str | None = None
 
 
 class InvoiceGeneratePayload(BaseModel):

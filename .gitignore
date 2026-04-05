@@ -46,3 +46,13 @@ Thumbs.db
 
 # Alembic bytecode
 alembic/__pycache__/
+
+# Security - prevent committing sensitive files
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+config.json
+secrets.txt
+replace.txt

@@ -4,6 +4,7 @@ import { api } from "../../api/http";
 import { useAuth } from "../../auth";
 import { Alert, Field } from "../../components/shared/UI";
 import { currency, ROLE_LABELS, SLOT_STATUS } from "../../utils/helpers";
+import { Calendar } from "../../components/shared/Calendar";
 
 function getErrorMessage(err, fallback) {
   const detail = err?.response?.data?.detail;
@@ -643,7 +644,19 @@ export function BookingPage() {
             </div>
 
             <Field label="Ngày khám:">
-              <input type="date" value={form.appointment_date} onChange={(e) => setForm((p) => ({ ...p, appointment_date: e.target.value }))} />
+              <Calendar 
+                doctorId={form.doctor_id}
+                selectedDate={form.appointment_date}
+                onDateSelect={(date, dayInfo) => {
+                  if (dayInfo.clickable) {
+                    setForm((p) => ({ ...p, appointment_date: date, appointment_time: "" }));
+                  }
+                }}
+                onMonthChange={(summary) => {
+                  // Optional: Handle month change summary if needed
+                  console.log('Month summary:', summary);
+                }}
+              />
             </Field>
 
             <p className="hint-text">Chỉ hiển thị các khung giờ chưa qua thời gian hiện tại.</p>
@@ -671,11 +684,7 @@ export function BookingPage() {
               Đặt lịch
             </button>
 
-            <div className="slot-legend custom-legend">
-              <span className="legend-item"><span className="dot green"></span>Còn trống</span>
-              <span className="legend-item"><span className="dot red"></span>Đã đặt</span>
-            </div>
-
+            
             {error ? <Alert type="error">{error}</Alert> : null}
           </form>
         </div>

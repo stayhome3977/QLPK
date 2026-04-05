@@ -194,12 +194,6 @@ export function PatientPortal({ loading, data, reload, activeTab }) {
       </Panel>
       )}
 
-      {activeTab === "lichsukham" && (
-        <Panel title="Chức năng trống">
-          <EmptyState text="Chức năng này đang được phát triển hoặc chưa có dữ liệu." />
-        </Panel>
-      )}
-
       {activeTab === "hoso" && (
         <Panel title="Hồ sơ bệnh nhân">
           {loading ? (

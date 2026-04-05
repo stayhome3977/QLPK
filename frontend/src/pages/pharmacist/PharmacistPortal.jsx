@@ -344,7 +344,27 @@ function InvoiceDetailModal({ invoice, onClose, onPrint }) {
           <span>Thời gian thanh toán</span>
           <strong>{fmtDateTime(invoice.paid_at || invoice.created_at)}</strong>
         </div>
-        <div className="invoice-detail-row">
+        {invoice.subtotal_amount && (
+          <>
+            <div className="invoice-detail-row">
+              <span>Tạm tính</span>
+              <strong>{currency(invoice.subtotal_amount)}</strong>
+            </div>
+            {invoice.discount_amount > 0 && (
+              <div className="invoice-detail-row" style={{ color: "var(--error-1)" }}>
+                <span>Giảm giá</span>
+                <strong>-{currency(invoice.discount_amount)}</strong>
+              </div>
+            )}
+            {invoice.insurance_support_amount > 0 && (
+              <div className="invoice-detail-row" style={{ color: "var(--success-1)" }}>
+                <span>Bảo hiểm hỗ trợ</span>
+                <strong>-{currency(invoice.insurance_support_amount)}</strong>
+              </div>
+            )}
+          </>
+        )}
+        <div className="invoice-detail-row" style={{ fontWeight: "bold", borderTop: "1px solid #ddd", paddingTop: "8px", marginTop: "4px" }}>
           <span>Tổng thanh toán</span>
           <strong>{currency(invoice.total_amount)}</strong>
         </div>
@@ -524,9 +544,9 @@ function TabHoaDon({ loading, requests, invoices, reload }) {
         invoiceId = activeRequest.invoice_id;
         console.log('FRONTEND DEBUG: Using existing invoice:', invoiceId);
       } else {
-        // Create new invoice
+        // Create new invoice - let backend automatically calculate discount from appointment
         const response = await api.post(`/api/v1/invoices/generate/${activeRequest.appointment_id}`, {
-          discount_amount: 0,
+          // Don't send discount_amount to let backend calculate it from appointment.discount_percent
           insurance_support_amount: 0,
           notes: `Tự động tạo từ phiếu PGDS-${activeRequest.id}`
         });

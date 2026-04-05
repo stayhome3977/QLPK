@@ -10,13 +10,9 @@ PHONE_PATTERN = r"^(0|\+84)\d{9,10}$"
 
 
 def _validate_password(v: str) -> str:
-    """Validate password: min 8 chars, at least one uppercase letter and one digit."""
-    if len(v) < 8:
-        raise ValueError("Mật khẩu phải có ít nhất 8 ký tự")
-    if not any(c.isupper() for c in v):
-        raise ValueError("Mật khẩu phải chứa ít nhất một chữ hoa")
-    if not any(c.isdigit() for c in v):
-        raise ValueError("Mật khẩu phải chứa ít nhất một chữ số")
+    """Validate password: just need to be non-empty."""
+    if len(v) == 0:
+        raise ValueError("Mật khẩu không được để trống")
     return v
 
 
@@ -43,7 +39,7 @@ class LoginRequest(BaseModel):
 class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=1)
     phone: str | None = Field(default=None, min_length=10, max_length=15)
     date_of_birth: date | None = None
     gender: str | None = None
@@ -102,7 +98,7 @@ class QuickPatientCreate(BaseModel):
 
 class LinkUserPayload(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=1)
 
     @field_validator('password')
     @classmethod
@@ -113,7 +109,7 @@ class LinkUserPayload(BaseModel):
 class AdminAccountCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=1)
     phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
     specialty: str | None = None
     license_number: str | None = None
@@ -131,7 +127,7 @@ class AdminAccountCreate(BaseModel):
 class DoctorCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=1)
     phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
     specialty: str
     license_number: str
@@ -147,7 +143,7 @@ class DoctorCreate(BaseModel):
 
 
 class ResetPasswordPayload(BaseModel):
-    new_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=1)
 
     @field_validator('new_password')
     @classmethod

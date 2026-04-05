@@ -222,17 +222,8 @@ class AuthService:
         Returns:
             Tuple[bool, str]: (Hợp lệ, Thông báo lỗi)
         """
-        if len(password) < 8:
-            return False, "Mật khẩu phải có ít nhất 8 ký tự"
-        
-        if not any(c.isupper() for c in password):
-            return False, "Mật khẩu phải có ít nhất 1 chữ hoa"
-        
-        if not any(c.islower() for c in password):
-            return False, "Mật khẩu phải có ít nhất 1 chữ thường"
-        
-        if not any(c.isdigit() for c in password):
-            return False, "Mật khẩu phải có ít nhất 1 số"
+        if len(password) == 0:
+            return False, "Mật khẩu không được để trống"
         
         return True, "Mật khẩu hợp lệ"
 

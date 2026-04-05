@@ -1418,6 +1418,84 @@ def get_available_slots(doctor_id: int = Query(...), date_value: date = Query(..
     }
 
 
+@router.get("/api/v1/appointments/calendar-availability")
+def get_calendar_availability(
+    doctor_id: int = Query(...), 
+    year: int = Query(...), 
+    month: int = Query(...), 
+    db: Session = Depends(get_db)
+):
+    """
+    Lấy lịch làm việc của bác sĩ trong một tháng cụ thể
+    """
+    from calendar import monthrange
+    
+    # Get number of days in the month
+    days_in_month = monthrange(year, month)[1]
+    availability = []
+    
+    for day in range(1, days_in_month + 1):
+        current_date = date(year, month, day)
+        slots = get_available_slots_logic(db, doctor_id, current_date)
+        
+        if not slots:
+            # No schedule for this day
+            availability.append({
+                "day": day,
+                "color": "grey",
+                "available_slots": 0,
+                "total_slots": 0,
+                "clickable": False,
+                "status": "unavailable"
+            })
+        else:
+            total_slots = len(slots)
+            available_slots = len([slot for slot in slots if slot["status"] == "available"])
+            
+            # Determine color and status based on availability
+            if available_slots == 0:
+                color = "red"
+                status = "full"
+                clickable = False
+            elif available_slots <= total_slots * 0.2:  # Less than 20% available
+                color = "yellow"
+                status = "almost-full"
+                clickable = True
+            else:
+                color = "green"
+                status = "available"
+                clickable = True
+            
+            availability.append({
+                "day": day,
+                "color": color,
+                "available_slots": available_slots,
+                "total_slots": total_slots,
+                "clickable": clickable,
+                "status": status
+            })
+    
+    # Calculate summary
+    available_days = len([item for item in availability if item["color"] == "green"])
+    almost_full_days = len([item for item in availability if item["color"] == "yellow"])
+    full_days = len([item for item in availability if item["color"] == "red"])
+    unavailable_days = len([item for item in availability if item["color"] == "grey"])
+    
+    return {
+        "doctor_id": doctor_id,
+        "year": year,
+        "month": month,
+        "availability": availability,
+        "summary": {
+            "available_days": available_days,
+            "almost_full_days": almost_full_days,
+            "full_days": full_days,
+            "unavailable_days": unavailable_days,
+            "total_days": days_in_month
+        }
+    }
+
+
 def resolve_appointment_service_ids(payload: AppointmentCreate) -> list[int]:
     service_ids: list[int] = []
     if payload.primary_service_id:
@@ -2013,7 +2091,32 @@ def checkout_pharmacy_request(
 ):
     request = get_pharmacy_request_or_404(db, request_id)
     appointment = get_appointment_or_404(db, request.appointment_id)
-    invoice = refresh_appointment_invoice(db, appointment, current_user.id, strict_prescription=True)
+    
+    # Calculate discount amount from appointment's discount_percent
+    discount_amount = None
+    if appointment.discount_percent and appointment.discount_percent > 0:
+        # Calculate discount based on subtotal amount
+        doctor = get_doctor_or_404(db, appointment.doctor_id)
+        subtotal = float(doctor.consultation_fee or 0)
+        
+        # Add prescription items if available
+        prescription = get_prescription_by_appointment(db, appointment.id)
+        if prescription:
+            items = db.query(PrescriptionItem).filter(PrescriptionItem.prescription_id == prescription.id).all()
+            for item in items:
+                billed_qty = item.dispensed_quantity or item.reserved_quantity or item.quantity
+                subtotal += float(item.unit_price) * billed_qty
+        
+        discount_amount = subtotal * (float(appointment.discount_percent) / 100)
+    
+    invoice = refresh_appointment_invoice(
+        db, 
+        appointment, 
+        current_user.id, 
+        discount_amount=discount_amount,
+        discount_reason=appointment.discount_note,
+        strict_prescription=True
+    )
     sync_pharmacy_request_status(db, request)
     db.commit()
     return serialize_invoice(db, invoice)
@@ -2027,7 +2130,32 @@ def confirm_pharmacy_request_paid(
 ):
     request = get_pharmacy_request_or_404(db, request_id)
     appointment = get_appointment_or_404(db, request.appointment_id)
-    invoice = refresh_appointment_invoice(db, appointment, current_user.id, strict_prescription=True)
+    
+    # Calculate discount amount from appointment's discount_percent
+    discount_amount = None
+    if appointment.discount_percent and appointment.discount_percent > 0:
+        # Calculate discount based on subtotal amount
+        doctor = get_doctor_or_404(db, appointment.doctor_id)
+        subtotal = float(doctor.consultation_fee or 0)
+        
+        # Add prescription items if available
+        prescription = get_prescription_by_appointment(db, appointment.id)
+        if prescription:
+            items = db.query(PrescriptionItem).filter(PrescriptionItem.prescription_id == prescription.id).all()
+            for item in items:
+                billed_qty = item.dispensed_quantity or item.reserved_quantity or item.quantity
+                subtotal += float(item.unit_price) * billed_qty
+        
+        discount_amount = subtotal * (float(appointment.discount_percent) / 100)
+    
+    invoice = refresh_appointment_invoice(
+        db, 
+        appointment, 
+        current_user.id, 
+        discount_amount=discount_amount,
+        discount_reason=appointment.discount_note,
+        strict_prescription=True
+    )
 
     if invoice.payment_status in {PaymentStatus.paid, PaymentStatus.credit_approved}:
         sync_pharmacy_request_status(db, request)
@@ -2593,7 +2721,30 @@ def ensure_prescription_invoice(db: Session, prescription: Prescription, cashier
         raise HTTPException(status_code=404, detail="Medical record not found")
     appointment = get_appointment_or_404(db, medical_record.appointment_id)
     ensure_prescription_ready_for_checkout(db, prescription, cashier_id)
-    return refresh_appointment_invoice(db, appointment, cashier_id, strict_prescription=True)
+    
+    # Calculate discount amount from appointment's discount_percent
+    discount_amount = None
+    if appointment.discount_percent and appointment.discount_percent > 0:
+        # Calculate discount based on subtotal amount
+        doctor = get_doctor_or_404(db, appointment.doctor_id)
+        subtotal = float(doctor.consultation_fee or 0)
+        
+        # Add prescription items if available
+        items = db.query(PrescriptionItem).filter(PrescriptionItem.prescription_id == prescription.id).all()
+        for item in items:
+            billed_qty = item.dispensed_quantity or item.reserved_quantity or item.quantity
+            subtotal += float(item.unit_price) * billed_qty
+        
+        discount_amount = subtotal * (float(appointment.discount_percent) / 100)
+    
+    return refresh_appointment_invoice(
+        db, 
+        appointment, 
+        cashier_id, 
+        discount_amount=discount_amount,
+        discount_reason=appointment.discount_note,
+        strict_prescription=True
+    )
 
 
 @router.post("/api/v1/invoices/generate/{appointment_id}")
@@ -2605,12 +2756,30 @@ def generate_invoice(
 ):
     payload = payload or InvoiceGeneratePayload()
     appointment = get_appointment_or_404(db, appointment_id)
+    
+    # Calculate discount amount from appointment's discount_percent if not provided in payload
+    discount_amount = payload.discount_amount
+    if discount_amount is None and appointment.discount_percent and appointment.discount_percent > 0:
+        # Calculate discount based on subtotal amount
+        doctor = get_doctor_or_404(db, appointment.doctor_id)
+        subtotal = float(doctor.consultation_fee or 0)
+        
+        # Add prescription items if available
+        prescription = get_prescription_by_appointment(db, appointment.id)
+        if prescription:
+            items = db.query(PrescriptionItem).filter(PrescriptionItem.prescription_id == prescription.id).all()
+            for item in items:
+                billed_qty = item.dispensed_quantity or item.reserved_quantity or item.quantity
+                subtotal += float(item.unit_price) * billed_qty
+        
+        discount_amount = subtotal * (float(appointment.discount_percent) / 100)
+    
     invoice = refresh_appointment_invoice(
         db,
         appointment,
         current_user.id,
-        discount_amount=payload.discount_amount,
-        discount_reason=payload.discount_reason,
+        discount_amount=discount_amount,
+        discount_reason=payload.discount_reason or appointment.discount_note,
         insurance_support_amount=payload.insurance_support_amount,
         notes=payload.notes,
     )

@@ -612,27 +612,34 @@ export function BookingPage() {
               </select>
             </Field>
 
-            <Field label="Gói dịch vụ đăng ký">
-              <div className="list-stack" style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #dbe4f0", borderRadius: 12, padding: 8 }}>
+            <div className="field">
+              <span>Gói dịch vụ đăng ký</span>
+              <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #dbe4f0", borderRadius: 12, padding: "8px", display: "flex", flexDirection: "column", gap: 2 }}>
                 {services.map((service) => {
                   const checked = form.service_ids.includes(String(service.id));
                   return (
-                    <label key={service.id} style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer", padding: "4px 0" }}>
-                      <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)} />
-                      <span style={{ fontSize: "0.9rem", lineHeight: "1.3", flex: 1 }}>
-                        <strong style={{ fontSize: "0.9rem" }}>{service.name}</strong>
-                        <div style={{ fontSize: "0.8rem", color: "#667085", margin: "2px 0" }}>{service.description}</div>
-                        <small style={{ fontSize: "0.8rem" }}>{currency(service.price)}</small>
+                    <label key={service.id} style={{ display: "flex", alignItems: "flex-start", cursor: "pointer", padding: "5px 6px", borderRadius: 6, gap: 8, background: checked ? "rgba(36,116,216,0.07)" : "transparent" }}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleService(service.id)} style={{ width: "auto", padding: 0, border: "none", borderRadius: 0, marginTop: 3, flexShrink: 0, accentColor: "var(--primary)" }} />
+                      <span style={{ fontSize: "0.85rem", lineHeight: "1.4", flex: 1, minWidth: 0 }}>
+                        <strong style={{ fontSize: "0.85rem", display: "block" }}>{service.name}</strong>
+                        <span style={{ fontSize: "0.75rem", color: "#667085" }}>{service.description}</span>
+                        <small style={{ fontSize: "0.75rem", display: "block", color: "#2474d8", fontWeight: 600 }}>{currency(service.price)}</small>
                       </span>
                     </label>
                   );
                 })}
               </div>
-            </Field>
+            </div>
 
-            <div className="doctor-details-text">
-              <p><strong>Số dịch vụ đã chọn:</strong> {selectedServices.length}</p>
-              <p><strong>Tổng tiền dịch vụ:</strong> {currency(selectedServicesTotal)}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "6px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "0.85rem" }}>Số dịch vụ đã chọn:</strong>
+                <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--primary)" }}>{selectedServices.length}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "0.85rem" }}>Tổng tiền dịch vụ:</strong>
+                <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--primary)" }}>{currency(selectedServicesTotal)}</span>
+              </div>
             </div>
 
             <Field label="Ngày khám:">

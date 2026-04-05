@@ -9,12 +9,12 @@ logger = logging.getLogger(__name__)
 
 class EmailService:
     def __init__(self):
-        self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_username = os.getenv("SMTP_USERNAME", "tronghoang3977@gmail.com")
-        self.smtp_password = os.getenv("SMTP_PASSWORD", "mwob uoqe mhgf hscq")
-        self.from_email = os.getenv("FROM_EMAIL", "tronghoang3977@gmail.com")
-        self.from_name = os.getenv("FROM_NAME", "Hospital System")
+        self.smtp_server = os.getenv("SMTP_SERVER")
+        self.smtp_port = int(os.getenv("SMTP_PORT"))
+        self.smtp_username = os.getenv("SMTP_USERNAME")
+        self.smtp_password = os.getenv("SMTP_PASSWORD")
+        self.from_email = os.getenv("FROM_EMAIL")
+        self.from_name = os.getenv("FROM_NAME")
     
     def send_email(
         self, 

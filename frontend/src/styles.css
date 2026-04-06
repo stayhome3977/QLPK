@@ -326,6 +326,13 @@ textarea {
   padding: 12px 16px;
 }
 
+.primary-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+}
+
 .secondary-link,
 .ghost-button {
   background: var(--surface-soft);
@@ -1207,7 +1214,7 @@ textarea {
   box-shadow: 0 32px 80px rgba(10,20,40,0.18);
   width: 100%;
   max-width: 640px;
-  max-height: 90vh;
+  max-height: 110vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1272,14 +1279,23 @@ textarea {
 }
 .invoice-detail-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   font-size: 0.95rem;
 }
 .invoice-detail-row:last-child { border-bottom: none; }
-.invoice-detail-row span:first-child { color: var(--muted); font-size: 0.88rem; }
+.invoice-detail-row span:first-child { 
+  color: var(--muted); 
+  font-size: 0.88rem; 
+  flex: 0 0 120px;
+}
+.invoice-detail-row strong {
+  flex: 1;
+  text-align: right;
+  font-weight: 600;
+}
 
 /* Invoice summary in payment tab */
 .pharm-invoice-summary {

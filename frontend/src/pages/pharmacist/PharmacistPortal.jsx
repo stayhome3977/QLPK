@@ -369,25 +369,17 @@ function InvoiceDetailModal({ invoice, onClose, onPrint }) {
           <span>Thời gian thanh toán</span>
           <strong>{fmtDateTime(invoice.paid_at || invoice.created_at)}</strong>
         </div>
-        {invoice.subtotal_amount && (
-          <>
-            <div className="invoice-detail-row">
-              <span>Tạm tính</span>
-              <strong>{currency(invoice.subtotal_amount)}</strong>
-            </div>
-            {invoice.discount_amount > 0 && (
-              <div className="invoice-detail-row" style={{ color: "var(--error-1)" }}>
-                <span>Giảm giá</span>
-                <strong>-{currency(invoice.discount_amount)}</strong>
-              </div>
-            )}
-            {invoice.insurance_support_amount > 0 && (
-              <div className="invoice-detail-row" style={{ color: "var(--success-1)" }}>
-                <span>Bảo hiểm hỗ trợ</span>
-                <strong>-{currency(invoice.insurance_support_amount)}</strong>
-              </div>
-            )}
-          </>
+        {invoice.discount_amount > 0 && (
+          <div className="invoice-detail-row" style={{ color: "var(--error-1)" }}>
+            <span>Giảm giá</span>
+            <strong>-{currency(invoice.discount_amount)}</strong>
+          </div>
+        )}
+        {invoice.insurance_support_amount > 0 && (
+          <div className="invoice-detail-row" style={{ color: "var(--success-1)" }}>
+            <span>Bảo hiểm hỗ trợ</span>
+            <strong>-{currency(invoice.insurance_support_amount)}</strong>
+          </div>
         )}
         <div className="invoice-detail-row" style={{ fontWeight: "bold", borderTop: "1px solid #ddd", paddingTop: "8px", marginTop: "4px" }}>
           <span>Tổng thanh toán</span>

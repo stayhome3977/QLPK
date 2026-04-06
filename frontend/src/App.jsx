@@ -114,7 +114,15 @@ function useDashboardData(role) {
         admin: ["/api/v1/reports/dashboard", "/api/v1/doctors", "/api/v1/medicines", "/api/v1/admin/accounts", "/api/v1/holidays", "/api/v1/admin/contracts"],
       }[role] || [];
 
-      const results = await Promise.all(requests.map((path) => api.get(path)));
+      // Add cache-busting timestamp to medicines API call
+      const requestsWithTimestamp = requests.map(path => {
+        if (path === "/api/v1/medicines") {
+          return `${path}?_t=${Date.now()}`;
+        }
+        return path;
+      });
+
+      const results = await Promise.all(requestsWithTimestamp.map((path) => api.get(path)));
       const data = {};
       requests.forEach((path, index) => {
         data[path] = results[index].data;
@@ -148,6 +156,7 @@ const PHARMACIST_TABS_BASE = [
 ];
 
 function PortalScreen({ role, title, subtitle, render }) {
+  const { user } = useAuth();
   const { loading, error, data, reload } = useDashboardData(role);
 
   const TABS = {
@@ -195,7 +204,7 @@ function PortalScreen({ role, title, subtitle, render }) {
         onActiveTabChange={setActiveTab}
       >
         {error ? <Alert type="error">{error}</Alert> : null}
-        {render({ loading, data, reload, activeTab, setActiveTab })}
+        {render({ loading, data, reload, activeTab, setActiveTab, user })}
       </DashboardLayout>
     </ProtectedRoleRoute>
   );
@@ -318,7 +327,7 @@ export default function App() {
             role="pharmacist"
             title="Điều khiển dược sĩ"
             subtitle="Quản lý đơn thuốc, kho hàng, nhà cung cấp và thanh toán."
-            render={({ loading, data, reload, activeTab }) => <PharmacistPortal loading={loading} data={data} reload={reload} activeTab={activeTab} />}
+            render={({ loading, data, reload, activeTab, user }) => <PharmacistPortal loading={loading} data={data} reload={reload} activeTab={activeTab} user={user} />}
           />
         }
       />

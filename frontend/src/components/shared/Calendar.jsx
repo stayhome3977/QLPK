@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { api } from "../../api/http";
 import "./Calendar.css";
 
-export function Calendar({ doctorId, selectedDate, onDateSelect, onMonthChange }) {
+export function Calendar({ doctorId, patientId, selectedDate, onDateSelect, onMonthChange }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [availability, setAvailability] = useState([]);
   const [loading, setLoading] = useState(false);
+  const isUpdatingFromSelectedDate = useRef(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -16,16 +18,75 @@ export function Calendar({ doctorId, selectedDate, onDateSelect, onMonthChange }
     }
   }, [doctorId, year, month]);
 
+  useEffect(() => {
+    if (selectedDate) {
+      const selected = new Date(selectedDate);
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.getMonth();
+      const selectedYear = selected.getFullYear();
+      const selectedMonth = selected.getMonth();
+      
+      console.log('useEffect selectedDate:', { 
+        selectedDate, 
+        currentYear, 
+        currentMonth, 
+        selectedYear, 
+        selectedMonth 
+      });
+      
+      // Only update if the selected date is in a different month
+      if (currentYear !== selectedYear || currentMonth !== selectedMonth) {
+        console.log('Updating currentDate to match selectedDate month');
+        setCurrentDate(new Date(selectedYear, selectedMonth, 1));
+        
+        // Call fetchAvailability directly with the new month
+        setTimeout(() => {
+          fetchAvailabilityForMonth(selectedYear, selectedMonth);
+        }, 0);
+      }
+    }
+  }, [selectedDate]);
+
+  const fetchAvailabilityForMonth = async (targetYear, targetMonth) => {
+    setLoading(true);
+    console.log('fetchAvailabilityForMonth called for:', { doctorId, patientId, year: targetYear, month: targetMonth });
+    try {
+      const params = {
+        doctor_id: doctorId,
+        year: targetYear,
+        month: targetMonth + 1 // JavaScript months are 0-indexed
+      };
+      if (patientId) {
+        params.patient_id = patientId;
+      }
+      const response = await api.get('/api/v1/appointments/calendar-availability', { params });
+      console.log('Availability received:', response.data.availability?.length, 'days');
+      setAvailability(response.data.availability || []);
+      if (onMonthChange) {
+        onMonthChange(response.data.summary);
+      }
+    } catch (error) {
+      console.error('Error fetching calendar availability:', error);
+      setAvailability([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchAvailability = async () => {
     setLoading(true);
+    console.log('fetchAvailability called for:', { doctorId, patientId, year, month });
     try {
-      const response = await api.get('/api/v1/appointments/calendar-availability', {
-        params: {
-          doctor_id: doctorId,
-          year: year,
-          month: month + 1 // JavaScript months are 0-indexed
-        }
-      });
+      const params = {
+        doctor_id: doctorId,
+        year: year,
+        month: month + 1 // JavaScript months are 0-indexed
+      };
+      if (patientId) {
+        params.patient_id = patientId;
+      }
+      const response = await api.get('/api/v1/appointments/calendar-availability', { params });
+      console.log('Availability received:', response.data.availability?.length, 'days');
       setAvailability(response.data.availability || []);
       if (onMonthChange) {
         onMonthChange(response.data.summary);
@@ -57,10 +118,16 @@ export function Calendar({ doctorId, selectedDate, onDateSelect, onMonthChange }
   };
 
   const handleDateClick = (day, dayInfo) => {
-    if (!dayInfo.clickable) return;
+    console.log('handleDateClick called:', { day, dayInfo });
+    if (!dayInfo.clickable) {
+      console.log('Day not clickable, returning');
+      return;
+    }
     
+    // Create date in local timezone and format properly
     const selected = new Date(year, month, day);
-    const formattedDate = selected.toISOString().split('T')[0];
+    const formattedDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    console.log('Calling onDateSelect with:', formattedDate, 'from date:', selected);
     onDateSelect(formattedDate, dayInfo);
   };
 
@@ -70,7 +137,8 @@ export function Calendar({ doctorId, selectedDate, onDateSelect, onMonthChange }
 
   const getDayClassName = (day, dayInfo) => {
     const baseClass = "calendar-day";
-    const isSelected = selectedDate === new Date(year, month, day).toISOString().split('T')[0];
+    const currentDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const isSelected = selectedDate === currentDateStr;
     
     if (isSelected) {
       return `${baseClass} selected`;
@@ -87,6 +155,8 @@ export function Calendar({ doctorId, selectedDate, onDateSelect, onMonthChange }
         return `${baseClass} almost-full`;
       case 'red':
         return `${baseClass} full`;
+      case 'orange':
+        return `${baseClass} patient-booked`;
       case 'grey':
       default:
         return `${baseClass} unavailable`;
@@ -168,6 +238,10 @@ export function Calendar({ doctorId, selectedDate, onDateSelect, onMonthChange }
         <div className="legend-item">
           <span className="legend-dot full"></span>
           <span>Hết slot</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-dot patient-booked"></span>
+          <span>Bạn đã có lịch hẹn</span>
         </div>
         <div className="legend-item">
           <span className="legend-dot unavailable"></span>

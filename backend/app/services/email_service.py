@@ -4,17 +4,18 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
 import logging
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 class EmailService:
     def __init__(self):
-        self.smtp_server = os.getenv("SMTP_SERVER")
-        self.smtp_port = int(os.getenv("SMTP_PORT"))
-        self.smtp_username = os.getenv("SMTP_USERNAME")
-        self.smtp_password = os.getenv("SMTP_PASSWORD")
-        self.from_email = os.getenv("FROM_EMAIL")
-        self.from_name = os.getenv("FROM_NAME")
+        self.smtp_server = settings.SMTP_SERVER
+        self.smtp_port = settings.SMTP_PORT
+        self.smtp_username = settings.SMTP_USERNAME
+        self.smtp_password = settings.SMTP_PASSWORD
+        self.from_email = settings.FROM_EMAIL
+        self.from_name = settings.FROM_NAME
     
     def send_email(
         self, 

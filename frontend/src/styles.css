@@ -1133,6 +1133,12 @@ textarea {
   gap: 12px;
   flex-wrap: wrap;
 }
+.pharm-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 .pharm-count {
   font-size: 0.88rem;
   color: var(--muted);

@@ -112,7 +112,7 @@ export function PatientPortal({ loading, data, reload, activeTab }) {
                       Đặt lại
                     </Link>
                   ) : null}
-                  {appointment.status === "pending" ? (
+                  {appointment.status === "pending" && !appointment.proposal ? (
                     <button className="ghost-button danger" onClick={() => cancelAppointment(appointment.id)}>
                       Hủy lịch
                     </button>

@@ -16,7 +16,7 @@ USE phong_kham_da_lieu;
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS tai_khoan (
-    ma_tai_khoan            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_tai_khoan            INTEGER PRIMARY KEY AUTOINCREMENT,
     email                   VARCHAR(150) NOT NULL,
     mat_khau                VARCHAR(255) NOT NULL COMMENT 'Chuoi bam bcrypt',
     vai_tro                 ENUM('quan_tri','bac_si','duoc_si','benh_nhan') NOT NULL DEFAULT 'benh_nhan',
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS tai_khoan (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS benh_nhan (
-    ma_benh_nhan                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_benh_nhan                INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_tai_khoan                INT UNSIGNED NOT NULL,
     ma_benh_nhan_he_thong       VARCHAR(20) NOT NULL COMMENT 'Vi du BN-0001',
     nguon_tao                   ENUM('tu_dang_ky','quan_tri') NOT NULL DEFAULT 'tu_dang_ky',
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS benh_nhan (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS bac_si (
-    ma_bac_si                   INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_bac_si                   INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_tai_khoan                INT UNSIGNED NOT NULL,
     chuyen_khoa                 VARCHAR(100) NOT NULL,
     so_chung_chi_hanh_nghe      VARCHAR(50) NOT NULL,
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS bac_si (
 -- BẢNG MỚI: HỒ SƠ BÁC SĨ
 -- ============================================================
 CREATE TABLE IF NOT EXISTS ho_so_bac_si (
-    ma_ho_so_bac_si             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_ho_so_bac_si             INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_bac_si                   INT UNSIGNED NOT NULL,
     
     ho_ten                      VARCHAR(100) NOT NULL,
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS ho_so_bac_si (
 
 -- (Các bảng còn lại giữ nguyên như file gốc của bạn)
 CREATE TABLE IF NOT EXISTS lich_lam_viec_bac_si (
-    ma_lich_lam_viec            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_lich_lam_viec            INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_bac_si                   INT UNSIGNED NOT NULL,
     thu_trong_tuan              TINYINT NOT NULL,
     gio_bat_dau                 TIME NOT NULL,
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS lich_lam_viec_bac_si (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS khoang_ban_bac_si (
-    ma_khoang_ban               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_khoang_ban               INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_bac_si                   INT UNSIGNED NOT NULL,
     ngay_ap_dung                DATE NOT NULL,
     gio_bat_dau                 TIME NOT NULL,
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS khoang_ban_bac_si (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ngay_nghi_bac_si (
-    ma_ngay_nghi                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_ngay_nghi                INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_bac_si                   INT UNSIGNED NOT NULL,
     ngay_nghi                   DATE NOT NULL,
     ly_do                       VARCHAR(200) NULL,
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS ngay_nghi_bac_si (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ngay_nghi_phong_kham (
-    ma_ngay_nghi_phong          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_ngay_nghi_phong          INTEGER PRIMARY KEY AUTOINCREMENT,
     ngay_nghi                   DATE NOT NULL,
     ten_ngay_nghi               VARCHAR(100) NOT NULL,
     dang_ap_dung                TINYINT(1) NOT NULL DEFAULT 1,
@@ -173,7 +173,7 @@ CREATE TABLE IF NOT EXISTS ngay_nghi_phong_kham (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS dich_vu (
-    ma_dich_vu                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_dich_vu                  INTEGER PRIMARY KEY AUTOINCREMENT,
     ten_dich_vu                 VARCHAR(200) NOT NULL,
     nhom_dich_vu                VARCHAR(100) NULL,
     mo_ta                       TEXT NULL,
@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS dich_vu (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS lich_hen (
-    ma_lich_hen                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_lich_hen                 INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_benh_nhan                INT UNSIGNED NOT NULL,
     ma_bac_si                   INT UNSIGNED NOT NULL,
     ma_dich_vu_chinh            INT UNSIGNED NULL,
@@ -235,7 +235,7 @@ CREATE TABLE IF NOT EXISTS lich_hen (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS dich_vu_lich_hen (
-    ma_dich_vu_lich_hen         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_dich_vu_lich_hen         INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_lich_hen                 INT UNSIGNED NOT NULL,
     ma_dich_vu                  INT UNSIGNED NOT NULL,
     so_luong                    INT NOT NULL DEFAULT 1,
@@ -251,7 +251,7 @@ CREATE TABLE IF NOT EXISTS dich_vu_lich_hen (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ho_so_benh_an (
-    ma_ho_so_benh_an            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_ho_so_benh_an            INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_lich_hen                 INT UNSIGNED NOT NULL,
     ma_benh_nhan                INT UNSIGNED NOT NULL,
     ma_bac_si                   INT UNSIGNED NOT NULL,
@@ -274,7 +274,7 @@ CREATE TABLE IF NOT EXISTS ho_so_benh_an (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS nha_cung_cap (
-    ma_nha_cung_cap             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_nha_cung_cap             INTEGER PRIMARY KEY AUTOINCREMENT,
     ten_nha_cung_cap            VARCHAR(200) NOT NULL,
     nguoi_lien_he               VARCHAR(150) NULL,
     so_dien_thoai               VARCHAR(15) NULL,
@@ -289,7 +289,7 @@ CREATE TABLE IF NOT EXISTS nha_cung_cap (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS thuoc (
-    ma_thuoc                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_thuoc                    INTEGER PRIMARY KEY AUTOINCREMENT,
     ten_thuoc                   VARCHAR(200) NOT NULL,
     ten_hoat_chat               VARCHAR(200) NULL,
     nhom_thuoc                  VARCHAR(100) NULL,
@@ -310,7 +310,7 @@ CREATE TABLE IF NOT EXISTS thuoc (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS lo_thuoc (
-    ma_lo_thuoc                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_lo_thuoc                 INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_thuoc                    INT UNSIGNED NOT NULL,
     ma_nha_cung_cap             INT UNSIGNED NULL,
     so_lo                       VARCHAR(100) NOT NULL,
@@ -330,7 +330,7 @@ CREATE TABLE IF NOT EXISTS lo_thuoc (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS don_thuoc (
-    ma_don_thuoc                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_don_thuoc                INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_ho_so_benh_an            INT UNSIGNED NOT NULL,
     ma_bac_si                   INT UNSIGNED NOT NULL,
     ma_benh_nhan                INT UNSIGNED NOT NULL,
@@ -352,7 +352,7 @@ CREATE TABLE IF NOT EXISTS don_thuoc (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS phieu_bac_si_gui_duoc_si (
-    ma_phieu_gui_duoc_si        INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_phieu_gui_duoc_si        INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_lich_hen                 INT UNSIGNED NOT NULL,
     ma_ho_so_benh_an            INT UNSIGNED NULL,
     ma_don_thuoc                INT UNSIGNED NULL,
@@ -379,7 +379,7 @@ CREATE TABLE IF NOT EXISTS phieu_bac_si_gui_duoc_si (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS chi_tiet_don_thuoc (
-    ma_chi_tiet_don_thuoc       INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_chi_tiet_don_thuoc       INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_don_thuoc                INT UNSIGNED NOT NULL,
     ma_thuoc                    INT UNSIGNED NOT NULL,
     so_luong_ke                 INT NOT NULL,
@@ -396,7 +396,7 @@ CREATE TABLE IF NOT EXISTS chi_tiet_don_thuoc (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS phan_bo_lo_don_thuoc (
-    ma_phan_bo                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_phan_bo                  INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_chi_tiet_don_thuoc       INT UNSIGNED NOT NULL,
     ma_lo_thuoc                 INT UNSIGNED NOT NULL,
     so_luong_giu_cho            INT NOT NULL DEFAULT 0,
@@ -409,7 +409,7 @@ CREATE TABLE IF NOT EXISTS phan_bo_lo_don_thuoc (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS hoa_don (
-    ma_hoa_don                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_hoa_don                  INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_lich_hen                 INT UNSIGNED NOT NULL,
     ma_benh_nhan                INT UNSIGNED NOT NULL,
     ma_duoc_si                  INT UNSIGNED NULL,
@@ -438,7 +438,7 @@ CREATE TABLE IF NOT EXISTS hoa_don (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS chi_tiet_hoa_don (
-    ma_chi_tiet_hoa_don         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_chi_tiet_hoa_don         INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_hoa_don                  INT UNSIGNED NOT NULL,
     loai_muc                    ENUM('phi_kham','dich_vu','thuoc','khac') NOT NULL,
     ma_tham_chieu               INT UNSIGNED NULL,
@@ -453,7 +453,7 @@ CREATE TABLE IF NOT EXISTS chi_tiet_hoa_don (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS giao_dich_thanh_toan (
-    ma_giao_dich                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_giao_dich                INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_hoa_don                  INT UNSIGNED NOT NULL,
     loai_giao_dich              ENUM('thu_tien','hoan_tien') NOT NULL DEFAULT 'thu_tien',
     phuong_thuc                 ENUM('tien_mat','the','chuyen_khoan','ho_tro_noi_bo','khac') NOT NULL,
@@ -473,7 +473,7 @@ CREATE TABLE IF NOT EXISTS giao_dich_thanh_toan (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS nhat_ky_kho (
-    ma_nhat_ky_kho              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_nhat_ky_kho              INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_thuoc                    INT UNSIGNED NOT NULL,
     ma_lo_thuoc                 INT UNSIGNED NULL,
     ma_tai_khoan                INT UNSIGNED NOT NULL,
@@ -492,7 +492,7 @@ CREATE TABLE IF NOT EXISTS nhat_ky_kho (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS thong_bao (
-    ma_thong_bao                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ma_thong_bao                INTEGER PRIMARY KEY AUTOINCREMENT,
     ma_tai_khoan                INT UNSIGNED NOT NULL,
     tieu_de                     VARCHAR(200) NOT NULL,
     noi_dung                    TEXT NOT NULL,

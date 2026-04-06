@@ -118,6 +118,13 @@
   cursor: not-allowed;
 }
 
+.calendar-day.patient-booked {
+  background: #fed7aa;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+  cursor: not-allowed;
+}
+
 .calendar-day.selected {
   background: #2474d8;
   color: white;
@@ -166,6 +173,11 @@
 .legend-dot.unavailable {
   background: #f3f4f6;
   border-color: #e5e7eb;
+}
+
+.legend-dot.patient-booked {
+  background: #fed7aa;
+  border-color: #fdba74;
 }
 
 @media (max-width: 640px) {

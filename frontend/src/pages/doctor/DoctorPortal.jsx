@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../api/http";
 import { useAuth } from "../../auth";
 import { EmptyState, Field, Panel } from "../../components/shared/UI";
@@ -145,27 +145,35 @@ export function DoctorPortal({ loading, data, reload, activeTab }) {
     return waitingAppointments;
   }, [activeTab, approvalAppointments, examAppointments, waitingAppointments]);
 
+  const activeListIds = useMemo(() => activeList.map(item => item.id).join(','), [activeList]);
+
   useEffect(() => {
-    if (activeList.length === 0) {
-      setSelected(null);
-      setRecord(defaultRecord);
-      setPrescriptionDraft(defaultPrescriptionDraft);
-      setPrescriptionItems([]);
-      return;
-    }
-    if (!selected) {
-      setSelected(activeList[0]);
-      return;
-    }
-    const refreshedSelection = activeList.find((item) => item.id === selected.id);
-    if (!refreshedSelection) {
-      setSelected(activeList[0]);
-      return;
-    }
-    if (refreshedSelection !== selected) {
-      setSelected(refreshedSelection);
-    }
-  }, [activeList, selected]);
+    setSelected((prevSelected) => {
+      if (activeList.length === 0) {
+        setRecord(defaultRecord);
+        setPrescriptionDraft(defaultPrescriptionDraft);
+        setPrescriptionItems([]);
+        return null;
+      }
+      
+      if (!prevSelected) {
+        return activeList[0];
+      }
+      
+      const refreshedSelection = activeList.find((item) => item.id === prevSelected.id);
+      if (!refreshedSelection) {
+        return activeList[0];
+      }
+      
+      // Only update if the selection is actually different
+      if (refreshedSelection.id !== prevSelected.id || 
+          refreshedSelection.status !== prevSelected.status) {
+        return refreshedSelection;
+      }
+      
+      return prevSelected;
+    });
+  }, [activeListIds]);
 
   useEffect(() => {
     if (!selected) {

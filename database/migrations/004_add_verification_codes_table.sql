@@ -8,7 +8,7 @@ USE phong_kham_da_lieu;
 
 -- Create verification_codes table
 CREATE TABLE IF NOT EXISTS verification_codes (
-    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     email VARCHAR(150) NOT NULL,
     code VARCHAR(10) NOT NULL,
     code_type ENUM('verification', 'password_reset') NOT NULL,

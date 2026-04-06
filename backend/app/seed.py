@@ -218,7 +218,7 @@ def seed_defaults(db: Session, admin_email: str, admin_password: str) -> None:
             phone="0911222333",
             email="nhacungcap@example.com",
             address="TP.HCM",
-            tax_code="0312345678",
+            notes="Nhà cung cấp mẫu cho hệ thống",
         )
         db.add(supplier)
         db.flush()

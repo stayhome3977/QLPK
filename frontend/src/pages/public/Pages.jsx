@@ -508,8 +508,9 @@ export function BookingPage() {
   const doctors = useLoad("/api/v1/doctors");
   const services = useLoad("/api/v1/services");
   const { doctorId } = useParams();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const [patientProfile, setPatientProfile] = useState(null);
   const [form, setForm] = useState({
     doctor_id: doctorId || "",
     primary_service_id: "",
@@ -537,11 +538,30 @@ export function BookingPage() {
   }, [doctorId]);
 
   useEffect(() => {
+    if (isAuthenticated && user?.role === 'patient') {
+      api.get('/api/v1/patients/me')
+        .then(response => {
+          setPatientProfile(response.data);
+        })
+        .catch(error => {
+          console.error('Error loading patient profile:', error);
+        });
+    }
+  }, [isAuthenticated, user]);
+
+  useEffect(() => {
     if (!form.doctor_id || !form.appointment_date) return;
+    console.log('Fetching slots for:', { doctor_id: form.doctor_id, date: form.appointment_date });
     api
       .get("/api/v1/appointments/available-slots", { params: { doctor_id: form.doctor_id, date: form.appointment_date } })
-      .then((response) => setSlots(response.data.slots || []))
-      .catch(() => setSlots([]));
+      .then((response) => {
+        console.log('Slots received:', response.data.slots);
+        setSlots(response.data.slots || []);
+      })
+      .catch((error) => {
+        console.error('Error fetching slots:', error);
+        setSlots([]);
+      });
   }, [form.doctor_id, form.appointment_date]);
 
   const selectedDoctor = doctors.find((item) => String(item.id) === String(form.doctor_id));
@@ -646,10 +666,15 @@ export function BookingPage() {
             <Field label="Ngày khám:">
               <Calendar 
                 doctorId={form.doctor_id}
+                patientId={patientProfile?.id}
                 selectedDate={form.appointment_date}
                 onDateSelect={(date, dayInfo) => {
+                  console.log('onDateSelect called:', { date, dayInfo });
                   if (dayInfo.clickable) {
+                    console.log('Setting form with date:', date);
                     setForm((p) => ({ ...p, appointment_date: date, appointment_time: "" }));
+                  } else {
+                    console.log('Day not clickable');
                   }
                 }}
                 onMonthChange={(summary) => {

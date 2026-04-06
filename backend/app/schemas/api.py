@@ -63,7 +63,7 @@ class RegisterRequest(BaseModel):
 
 class PatientUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=2, max_length=100)
-    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    phone: str | None = None
     date_of_birth: date | None = None
     gender: str | None = None
     address: str | None = None
@@ -71,13 +71,22 @@ class PatientUpdate(BaseModel):
     allergy_notes: str | None = None
     occupation: str | None = None
     emergency_contact_name: str | None = None
-    emergency_contact_phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    emergency_contact_phone: str | None = None
 
     @field_validator("full_name", "phone", "emergency_contact_phone", mode="before")
     @classmethod
-    def empty_str_to_none(cls, v: Any) -> Any:
+    def empty_string_to_none(cls, v):
         if v == "":
             return None
+        return v
+
+    @field_validator("phone", "emergency_contact_phone", mode="before")
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None or v == "":
+            return None
+        if not re.match(PHONE_PATTERN, v):
+            raise ValueError("Số điện thoại không hợp lệ. Phải bắt đầu bằng 0 hoặc +84 và có 9-10 số tiếp theo.")
         return v
 
     @field_validator("date_of_birth", mode="before")
@@ -90,10 +99,19 @@ class PatientUpdate(BaseModel):
 
 class QuickPatientCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
-    phone: str = Field(pattern=PHONE_PATTERN)
+    phone: str | None = None
     date_of_birth: date | None = None
     gender: str | None = None
     address: str | None = None
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None or v == "":
+            return None
+        if not re.match(PHONE_PATTERN, v):
+            raise ValueError("Số điện thoại không hợp lệ. Phải bắt đầu bằng 0 hoặc +84 và có 9-10 số tiếp theo.")
+        return v
 
 
 class LinkUserPayload(BaseModel):
@@ -110,13 +128,22 @@ class AdminAccountCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=1)
-    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    phone: str | None = None
     specialty: str | None = None
     license_number: str | None = None
     degree: str | None = None
-    experience_years: int = Field(default=0, ge=0)
-    consultation_fee: float = Field(default=200000, ge=0)
+    experience_years: int | None = None
+    consultation_fee: float | None = None
     bio: str | None = None
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None or v == "":
+            return None
+        if not re.match(PHONE_PATTERN, v):
+            raise ValueError("Số điện thoại không hợp lệ. Phải bắt đầu bằng 0 hoặc +84 và có 9-10 số tiếp theo.")
+        return v
 
     @field_validator('password')
     @classmethod
@@ -128,13 +155,22 @@ class DoctorCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=1)
-    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    phone: str | None = None
     specialty: str
     license_number: str
     degree: str | None = None
-    experience_years: int = Field(default=0, ge=0)
-    consultation_fee: float = Field(default=200000, ge=0)
+    experience_years: int | None = None
+    consultation_fee: float | None = None
     bio: str | None = None
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None or v == "":
+            return None
+        if not re.match(PHONE_PATTERN, v):
+            raise ValueError("Số điện thoại không hợp lệ. Phải bắt đầu bằng 0 hoặc +84 và có 9-10 số tiếp theo.")
+        return v
 
     @field_validator('password')
     @classmethod
@@ -222,12 +258,21 @@ class AppointmentCreate(BaseModel):
 class WalkInCreate(BaseModel):
     patient_id: int | None = None
     patient_name: str | None = None
-    patient_phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    patient_phone: str | None = None
     doctor_id: int
     primary_service_id: int | None = None
     appointment_date: date
     appointment_time: time
     chief_complaint: str | None = None
+
+    @field_validator("patient_phone", mode="before")
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None or v == "":
+            return None
+        if not re.match(PHONE_PATTERN, v):
+            raise ValueError("Số điện thoại không hợp lệ. Phải bắt đầu bằng 0 hoặc +84 và có 9-10 số tiếp theo.")
+        return v
 
 
 class AppointmentServicePayload(BaseModel):
@@ -307,10 +352,19 @@ class PrescriptionCreate(BaseModel):
 class SupplierCreate(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     contact_name: str | None = None
-    phone: str | None = Field(default=None, pattern=PHONE_PATTERN)
+    phone: str | None = None
     email: EmailStr | None = None
     address: str | None = None
     notes: str | None = None
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def validate_phone(cls, v):
+        if v is None or v == "" or v == 'null':
+            return None
+        if not re.match(PHONE_PATTERN, v):
+            raise ValueError("Số điện thoại không hợp lệ. Phải bắt đầu bằng 0 hoặc +84 và có 9-10 số tiếp theo.")
+        return v
 
 
 class MedicineCreate(BaseModel):

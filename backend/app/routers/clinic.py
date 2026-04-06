@@ -23,6 +23,7 @@ from app.core.dependencies import get_current_user, require_role
 from app.core.security import get_password_hash
 from app.models.entities import (
     Appointment,
+    AppointmentService,
     AppointmentStatus,
     BookingSource,
     ClinicHoliday,
@@ -252,8 +253,35 @@ def get_prescription_by_appointment(db: Session, appointment_id: int) -> Prescri
 
 
 def serialize_appointment_services(db: Session, appointment_id: int) -> list[dict]:
-    """Return services for an appointment. Since AppointmentService was deprecated, 
-    this returns the primary service if available, or empty list."""
+    """Return services for an appointment using AppointmentService table."""
+    # Check if AppointmentService table has data for this appointment
+    appointment_services = (
+        db.query(AppointmentService)
+        .filter(AppointmentService.appointment_id == appointment_id)
+        .order_by(AppointmentService.id.asc())
+        .all()
+    )
+    
+    # If we have AppointmentService records, use them
+    if appointment_services:
+        services_list = []
+        for apt_srv in appointment_services:
+            svc = db.query(Service).filter(Service.id == apt_srv.service_id).first()
+            if svc:
+                services_list.append(
+                    {
+                        "id": apt_srv.id,
+                        "service_id": svc.id,
+                        "name": svc.name,
+                        "quantity": apt_srv.quantity,
+                        "unit_price": float(apt_srv.unit_price),
+                        "line_total": float(apt_srv.unit_price) * apt_srv.quantity,
+                        "notes": apt_srv.notes,
+                    }
+                )
+        return services_list
+    
+    # Fallback to primary service if no AppointmentService records exist
     appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
     if not appointment or not appointment.primary_service_id:
         return []
@@ -460,19 +488,9 @@ def ensure_clinic_holiday_table(db: Session) -> None:
     """
     Keep holidays endpoints resilient when DB was initialized from a partial SQL script.
     """
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS ngay_nghi_phong_kham (
-                ma_ngay_nghi_phong INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                ngay_nghi DATE NOT NULL UNIQUE,
-                ten_ngay_nghi VARCHAR(100) NOT NULL,
-                dang_ap_dung TINYINT(1) NOT NULL DEFAULT 1
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            """
-        )
-    )
-    db.commit()
+    # Use SQLAlchemy to create table instead of raw SQL
+    from app.models.entities import ClinicHoliday
+    ClinicHoliday.__table__.create(db.bind, checkfirst=True)
 
 
 def get_available_slots_logic(db: Session, doctor_id: int, selected_date: date) -> list[dict]:
@@ -553,11 +571,31 @@ def recompute_medicine_stock(db: Session, medicine_id: int) -> None:
     medicine = db.query(Medicine).filter(Medicine.id == medicine_id).first()
     if medicine:
         medicine.current_stock = int(total or 0)
+        db.flush()  # Ensure the change is persisted immediately
+        db.refresh(medicine)  # Refresh the object to get the updated value
 
 
 def generate_invoice_number(db: Session) -> str:
     year = datetime.utcnow().year
-    total = db.query(Invoice).count() + 1
+    
+    # Get the maximum invoice number for the current year
+    latest_invoice = (
+        db.query(Invoice)
+        .filter(Invoice.invoice_number.like(f"PKD-{year}-%"))
+        .order_by(Invoice.invoice_number.desc())
+        .first()
+    )
+    
+    if latest_invoice and latest_invoice.invoice_number:
+        # Extract the numeric part from the latest invoice number
+        try:
+            latest_num = int(latest_invoice.invoice_number.split("-")[-1])
+            total = latest_num + 1
+        except (ValueError, IndexError):
+            total = 1
+    else:
+        total = 1
+    
     return f"PKD-{year}-{total:04d}"
 
 
@@ -943,9 +981,17 @@ def prepare_prescription_logic(db: Session, prescription: Prescription, user_id:
             .filter(
                 MedicineBatch.medicine_id == item.medicine_id,
                 MedicineBatch.is_active.is_(True),
-                MedicineBatch.expiry_date >= date.today(),
+                # Include batches with no expiry date OR expiry date in the future
+                or_(
+                    MedicineBatch.expiry_date.is_(None),
+                    MedicineBatch.expiry_date >= date.today(),
+                ),
             )
-            .order_by(MedicineBatch.expiry_date.asc(), MedicineBatch.imported_at.asc())
+            .order_by(
+                case((MedicineBatch.expiry_date.is_(None), 1), else_=0),
+                MedicineBatch.expiry_date.asc(),
+                MedicineBatch.imported_at.asc(),
+            )
             .all()
         )
         for batch in batches:
@@ -1422,7 +1468,8 @@ def get_available_slots(doctor_id: int = Query(...), date_value: date = Query(..
 def get_calendar_availability(
     doctor_id: int = Query(...), 
     year: int = Query(...), 
-    month: int = Query(...), 
+    month: int = Query(...),
+    patient_id: int = Query(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -1438,6 +1485,20 @@ def get_calendar_availability(
         current_date = date(year, month, day)
         slots = get_available_slots_logic(db, doctor_id, current_date)
         
+        # Check if patient already has an appointment on this day
+        patient_has_appointment = False
+        if patient_id:
+            patient_appointment = (
+                db.query(Appointment)
+                .filter(
+                    Appointment.patient_id == patient_id,
+                    Appointment.appointment_date == current_date,
+                    Appointment.status.notin_([AppointmentStatus.cancelled, AppointmentStatus.no_show]),
+                )
+                .first()
+            )
+            patient_has_appointment = bool(patient_appointment)
+        
         if not slots:
             # No schedule for this day
             availability.append({
@@ -1452,8 +1513,12 @@ def get_calendar_availability(
             total_slots = len(slots)
             available_slots = len([slot for slot in slots if slot["status"] == "available"])
             
-            # Determine color and status based on availability
-            if available_slots == 0:
+            # Determine color and status based on availability and patient appointments
+            if patient_has_appointment:
+                color = "orange"  # New color for days with patient appointments
+                status = "patient-booked"
+                clickable = False
+            elif available_slots == 0:
                 color = "red"
                 status = "full"
                 clickable = False
@@ -1479,6 +1544,7 @@ def get_calendar_availability(
     available_days = len([item for item in availability if item["color"] == "green"])
     almost_full_days = len([item for item in availability if item["color"] == "yellow"])
     full_days = len([item for item in availability if item["color"] == "red"])
+    patient_booked_days = len([item for item in availability if item["color"] == "orange"])
     unavailable_days = len([item for item in availability if item["color"] == "grey"])
     
     return {
@@ -1490,6 +1556,7 @@ def get_calendar_availability(
             "available_days": available_days,
             "almost_full_days": almost_full_days,
             "full_days": full_days,
+            "patient_booked_days": patient_booked_days,
             "unavailable_days": unavailable_days,
             "total_days": days_in_month
         }
@@ -1560,18 +1627,18 @@ def build_appointment(
     db.add(appointment)
     db.flush()
 
-    # DEPRECATED: AppointmentService functionality removed
-    # for service_id in service_ids:
-    #     service = get_service_or_404(db, service_id)
-    #     db.add(
-    #         AppointmentService(
-    #             appointment_id=appointment.id,
-    #             service_id=service.id,
-    #             quantity=1,
-    #             unit_price=service.price,
-    #             added_by=current_user.id,
-    #         )
-    #     )
+    # Create AppointmentService records for all services
+    for service_id in service_ids:
+        service = get_service_or_404(db, service_id)
+        db.add(
+            AppointmentService(
+                appointment_id=appointment.id,
+                service_id=service.id,
+                quantity=1,
+                unit_price=service.price,
+                added_by=current_user.id,
+            )
+        )
     return appointment
 
 
@@ -2129,6 +2196,11 @@ def confirm_pharmacy_request_paid(
     current_user: User = Depends(require_role(["pharmacist", "admin"])),
 ):
     request = get_pharmacy_request_or_404(db, request_id)
+    
+    # Check if request is already paid to prevent double confirmation
+    if request.status == PharmacyRequestStatus.paid:
+        return {"message": "Yêu cầu đã được xác nhận thanh toán trước đó", "status": "already_paid"}
+    
     appointment = get_appointment_or_404(db, request.appointment_id)
     
     # Calculate discount amount from appointment's discount_percent
@@ -2158,9 +2230,43 @@ def confirm_pharmacy_request_paid(
     )
 
     if invoice.payment_status in {PaymentStatus.paid, PaymentStatus.credit_approved}:
+        # Already fully paid — settle inventory if not yet done
+        prescription = get_prescription_by_appointment(db, appointment.id)
+        if prescription and prescription.status not in {PrescriptionStatus.dispensed, PrescriptionStatus.partially_dispensed}:
+            try:
+                settle_prescription_inventory(db, prescription, current_user.id, reference_type="invoice_payment")
+            except HTTPException:
+                pass  # Ignore if inventory cannot be settled (e.g. no allocations)
         sync_pharmacy_request_status(db, request)
+        db.commit()
         return serialize_invoice(db, invoice)
 
+    # Check if there's already a success TX covering the full amount (created via pay_invoice)
+    existing_paid = (
+        db.query(func.coalesce(func.sum(PaymentTransaction.amount), 0))
+        .filter(
+            PaymentTransaction.invoice_id == invoice.id,
+            PaymentTransaction.status == TransactionStatus.success,
+            PaymentTransaction.transaction_type == TransactionType.payment,
+        )
+        .scalar() or 0
+    )
+    if float(existing_paid) >= float(invoice.total_amount) and float(invoice.total_amount) > 0:
+        # All paid via success TX already — just sync status & settle inventory
+        invoice.invoice_status = InvoiceStatus.issued
+        sync_invoice_payment_status(invoice, db)
+        prescription = get_prescription_by_appointment(db, appointment.id)
+        if prescription and invoice.payment_status in {PaymentStatus.paid, PaymentStatus.credit_approved}:
+            if prescription.status not in {PrescriptionStatus.dispensed, PrescriptionStatus.partially_dispensed}:
+                try:
+                    settle_prescription_inventory(db, prescription, current_user.id, reference_type="invoice_payment")
+                except HTTPException:
+                    pass
+        sync_pharmacy_request_status(db, request)
+        db.commit()
+        return serialize_invoice(db, invoice)
+
+    # Try to confirm a pending TX first
     pending_tx = (
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.invoice_id == invoice.id, PaymentTransaction.status == TransactionStatus.pending)
@@ -2171,7 +2277,8 @@ def confirm_pharmacy_request_paid(
         pending_tx.status = TransactionStatus.success
         pending_tx.paid_at = utcnow()
     else:
-        remaining = max(0, float(invoice.total_amount) - float(invoice.paid_amount or 0))
+        # No existing TX at all — create one for the remaining amount
+        remaining = max(0, float(invoice.total_amount) - float(existing_paid))
         if remaining > 0:
             db.add(
                 PaymentTransaction(
@@ -2188,7 +2295,11 @@ def confirm_pharmacy_request_paid(
     sync_invoice_payment_status(invoice, db)
     prescription = get_prescription_by_appointment(db, appointment.id)
     if prescription and invoice.payment_status in {PaymentStatus.paid, PaymentStatus.credit_approved}:
-        settle_prescription_inventory(db, prescription, current_user.id, reference_type="invoice_payment")
+        if prescription.status not in {PrescriptionStatus.dispensed, PrescriptionStatus.partially_dispensed}:
+            try:
+                settle_prescription_inventory(db, prescription, current_user.id, reference_type="invoice_payment")
+            except HTTPException:
+                pass
     sync_pharmacy_request_status(db, request)
     db.commit()
     return serialize_invoice(db, invoice)
@@ -2235,7 +2346,10 @@ def dispense_prescription(prescription_id: int, db: Session = Depends(get_db), c
 
 @router.get("/api/v1/medicines")
 def list_medicines(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return [
+    from fastapi import Response
+    from fastapi.responses import JSONResponse
+    
+    medicines = [
         {
             "id": item.id,
             "name": item.name,
@@ -2252,6 +2366,15 @@ def list_medicines(db: Session = Depends(get_db), current_user: User = Depends(g
         }
         for item in db.query(Medicine).order_by(Medicine.id.desc()).all()
     ]
+    
+    return JSONResponse(
+        content=medicines,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 
 @router.post("/api/v1/medicines")
@@ -2305,8 +2428,10 @@ def import_batch(
         supplier_id=payload.supplier_id,
     )
     db.add(batch)
-    db.flush()
-    recompute_medicine_stock(db, medicine_id)
+    db.flush()  # flush to get batch.id and make batch visible to queries
+    recompute_medicine_stock(db, medicine_id)  # update medicine.current_stock
+    db.flush()  # flush to persist updated current_stock before reading it
+    after = medicine.current_stock
     db.add(
         InventoryLog(
             medicine_id=medicine_id,
@@ -2315,14 +2440,15 @@ def import_batch(
             action=InventoryAction.import_,
             quantity_change=payload.import_quantity,
             quantity_before=before,
-            quantity_after=medicine.current_stock,
+            quantity_after=after,
             reference_id=batch.id,
             reference_type="batch_import",
             notes=payload.notes,
         )
     )
     db.commit()
-    return {"message": "Đã nhập kho theo lô", "id": batch.id}
+    db.refresh(medicine)  # ensure medicine object reflects committed state
+    return {"message": "Đã nhập kho theo lô", "batch_id": batch.id, "new_stock": medicine.current_stock}
 
 
 @router.get("/api/v1/medicines/low-stock")
@@ -2364,28 +2490,28 @@ def append_invoice_items_for_appointment(db: Session, invoice: Invoice, appointm
         )
     )
 
-    # DEPRECATED: AppointmentService functionality removed
-    # services = (
-    #     db.query(AppointmentService)
-    #     .filter(AppointmentService.appointment_id == appointment.id)
-    #     .order_by(AppointmentService.id.asc())
-    #     .all()
-    # )
-    # for item in services:
-    #     line_total = float(item.unit_price) * item.quantity
-    #     subtotal += line_total
-    #     service = db.query(Service).filter(Service.id == item.service_id).first()
-    #     db.add(
-    #         InvoiceItem(
-    #             invoice_id=invoice.id,
-    #             item_type=INVOICE_ITEM_TYPE_SERVICE,
-    #             reference_id=item.service_id,
-    #             description=service.name if service else f"Dịch vụ #{item.service_id}",
-    #             quantity=item.quantity,
-    #             unit_price=float(item.unit_price),
-    #             line_total=line_total,
-    #         )
-    #     )
+    # Add services to invoice
+    services = (
+        db.query(AppointmentService)
+        .filter(AppointmentService.appointment_id == appointment.id)
+        .order_by(AppointmentService.id.asc())
+        .all()
+    )
+    for item in services:
+        line_total = float(item.unit_price) * item.quantity
+        subtotal += line_total
+        service = db.query(Service).filter(Service.id == item.service_id).first()
+        db.add(
+            InvoiceItem(
+                invoice_id=invoice.id,
+                item_type=INVOICE_ITEM_TYPE_SERVICE,
+                reference_id=item.service_id,
+                description=service.name if service else f"Dịch vụ #{item.service_id}",
+                quantity=item.quantity,
+                unit_price=float(item.unit_price),
+                line_total=line_total,
+            )
+        )
 
     prescription = get_prescription_by_appointment(db, appointment.id)
     if prescription and strict_prescription:
@@ -2474,6 +2600,9 @@ def settle_prescription_inventory(
     items = db.query(PrescriptionItem).filter(PrescriptionItem.prescription_id == prescription.id).all()
     if not items:
         return
+    
+    affected_medicine_ids = set()
+    
     for item in items:
         allocations = (
             db.query(PrescriptionItemAllocation)
@@ -2490,12 +2619,26 @@ def settle_prescription_inventory(
             batch = db.query(MedicineBatch).filter(MedicineBatch.id == allocation.batch_id).first()
             if not batch or batch.remaining_quantity < qty:
                 raise HTTPException(status_code=400, detail="Tồn kho lô thuốc không đủ để xác nhận thanh toán")
-            before = batch.remaining_quantity
+            medicine = db.query(Medicine).filter(Medicine.id == batch.medicine_id).first()
+            if not medicine:
+                raise HTTPException(status_code=400, detail="Không tìm thấy thông tin thuốc")
+            # Refresh medicine object to ensure we have the latest stock before changes
+            db.refresh(medicine)
+            before = medicine.current_stock
+            
             batch.reserved_quantity = max(0, batch.reserved_quantity - qty)
             batch.remaining_quantity = max(0, batch.remaining_quantity - qty)
             allocation.dispensed_quantity += qty
             dispensed += qty
+            affected_medicine_ids.add(batch.medicine_id)
+            
+            # Force flush batch changes before recomputing stock
+            db.flush()
+            
             recompute_medicine_stock(db, batch.medicine_id)
+            db.flush()  # Ensure the stock change is persisted
+            db.refresh(medicine)  # Ensure medicine object has updated current_stock
+            after = medicine.current_stock
             db.add(
                 InventoryLog(
                     medicine_id=batch.medicine_id,
@@ -2504,7 +2647,7 @@ def settle_prescription_inventory(
                     action=InventoryAction.export,
                     quantity_change=-qty,
                     quantity_before=before,
-                    quantity_after=batch.remaining_quantity,
+                    quantity_after=after,
                     reference_id=prescription.id,
                     reference_type=reference_type,
                     notes="Xuất kho khi hóa đơn đã thanh toán",
@@ -2516,6 +2659,13 @@ def settle_prescription_inventory(
     prescription.dispensed_at = utcnow()
     prescription.picked_up_at = utcnow()
     prescription.status = PrescriptionStatus.dispensed if all(item.dispensed_quantity >= item.quantity for item in items) else PrescriptionStatus.partially_dispensed
+    
+    # Ensure all affected medicines are properly refreshed
+    for medicine_id in affected_medicine_ids:
+        medicine = db.query(Medicine).filter(Medicine.id == medicine_id).first()
+        if medicine:
+            db.refresh(medicine)
+    
     db.flush()
 
 
@@ -2528,6 +2678,8 @@ def settle_invoice_medicine_inventory(db: Session, invoice: Invoice, user_id: in
     )
     if not medicine_items:
         return
+    
+    affected_medicine_ids = set()
     
     for item in medicine_items:
         medicine = db.query(Medicine).filter(Medicine.id == item.reference_id).first()
@@ -2554,13 +2706,24 @@ def settle_invoice_medicine_inventory(db: Session, invoice: Invoice, user_id: in
             if remaining_qty <= 0:
                 break
             
+            # Refresh medicine object to ensure we have the latest stock before changes
+            db.refresh(medicine)
+            before = medicine.current_stock
+            
             qty_to_deduct = min(remaining_qty, batch.remaining_quantity)
-            before = batch.remaining_quantity
             batch.remaining_quantity -= qty_to_deduct
             remaining_qty -= qty_to_deduct
             
             # Update medicine stock
+            affected_medicine_ids.add(medicine.id)
+            
+            # Force flush batch changes before recomputing stock
+            db.flush()
+            
             recompute_medicine_stock(db, medicine.id)
+            db.flush()  # Ensure the stock change is persisted
+            db.refresh(medicine)  # Ensure medicine object has updated current_stock
+            after = medicine.current_stock
             
             # Create inventory log
             db.add(
@@ -2571,7 +2734,7 @@ def settle_invoice_medicine_inventory(db: Session, invoice: Invoice, user_id: in
                     action=InventoryAction.export,
                     quantity_change=-qty_to_deduct,
                     quantity_before=before,
-                    quantity_after=batch.remaining_quantity,
+                    quantity_after=after,
                     reference_id=invoice.id,
                     reference_type="invoice_payment",
                     notes=f"Xuất kho khi thanh toán hóa đơn: {medicine.name}",
@@ -2580,6 +2743,12 @@ def settle_invoice_medicine_inventory(db: Session, invoice: Invoice, user_id: in
         
         if remaining_qty > 0:
             raise HTTPException(status_code=400, detail=f"Tồn kho không đủ cho thuốc: {medicine.name}")
+    
+    # Ensure all affected medicines are properly refreshed
+    for medicine_id in affected_medicine_ids:
+        medicine = db.query(Medicine).filter(Medicine.id == medicine_id).first()
+        if medicine:
+            db.refresh(medicine)
     
     db.flush()
 
@@ -2596,9 +2765,13 @@ def restore_prescription_inventory(db: Session, prescription: Prescription, user
             batch = db.query(MedicineBatch).filter(MedicineBatch.id == allocation.batch_id).first()
             restored = allocation.dispensed_quantity
             if batch and restored > 0:
-                before = batch.remaining_quantity
+                medicine = db.query(Medicine).filter(Medicine.id == batch.medicine_id).first()
+                before = medicine.current_stock if medicine else 0
                 batch.remaining_quantity += restored
                 recompute_medicine_stock(db, batch.medicine_id)
+                if medicine:
+                    db.refresh(medicine)  # Ensure medicine object has updated current_stock
+                after = medicine.current_stock if medicine else 0
                 db.add(
                     InventoryLog(
                         medicine_id=batch.medicine_id,
@@ -2607,7 +2780,7 @@ def restore_prescription_inventory(db: Session, prescription: Prescription, user
                         action=InventoryAction.import_return,
                         quantity_change=restored,
                         quantity_before=before,
-                        quantity_after=batch.remaining_quantity,
+                        quantity_after=after,
                         reference_id=reference_id,
                         reference_type="invoice_delete",
                         notes="Hoàn kho khi xóa hóa đơn đã thanh toán",
@@ -2654,9 +2827,11 @@ def restore_invoice_medicine_inventory(db: Session, invoice: Invoice, user_id: i
         for log in inventory_logs:
             batch = db.query(MedicineBatch).filter(MedicineBatch.id == log.batch_id).first()
             if batch and log.quantity_change < 0:  # Only restore exported items
-                before = batch.remaining_quantity
+                before = medicine.current_stock
                 batch.remaining_quantity += abs(log.quantity_change)
                 recompute_medicine_stock(db, medicine.id)
+                db.refresh(medicine)  # Ensure medicine object has updated current_stock
+                after = medicine.current_stock
                 
                 # Create inventory log for restoration
                 db.add(
@@ -2667,7 +2842,7 @@ def restore_invoice_medicine_inventory(db: Session, invoice: Invoice, user_id: i
                         action=InventoryAction.import_return,
                         quantity_change=abs(log.quantity_change),
                         quantity_before=before,
-                        quantity_after=batch.remaining_quantity,
+                        quantity_after=after,
                         reference_id=invoice.id,
                         reference_type="invoice_delete",
                         notes=f"Hoàn kho khi xóa hóa đơn: {medicine.name}",
@@ -3452,13 +3627,132 @@ def delete_account(user_id: int, db: Session = Depends(get_db), current_user: Us
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    
     try:
+        from sqlalchemy import text
+        
+        # Delete related records in correct order to avoid foreign key constraints
+        related_tables = [
+            ("lich_lam_viec_bac_si", "quan_ly_boi"),
+            ("ngay_nghi_bac_si", "tao_boi"),
+            ("nhat_ky_kho", "ma_tai_khoan"),
+            ("lich_hen", "huy_boi"),
+            ("don_thuoc", "giao_boi"),
+            ("don_thuoc", "chuan_bi_boi"),
+            ("phieu_bac_si_gui_duoc_si", "gui_boi"),
+            ("hoa_don", "duyet_giam_gia_boi"),
+            ("hoa_don", "ma_duoc_si"),
+            ("giao_dich_thanh_toan", "duyet_boi"),
+            ("giao_dich_thanh_toan", "tao_boi"),
+            ("thong_bao", "ma_tai_khoan"),
+        ]
+        
+        # Delete related records
+        for table, column in related_tables:
+            db.execute(text(f"DELETE FROM {table} WHERE {column} = :user_id"), {"user_id": user_id})
+        
+        # Comprehensive deletion in correct order to handle all foreign key constraints
+        
+        # Step 1: Delete records that reference don_thuoc (before deleting don_thuoc)
+        db.execute(text("""
+            DELETE FROM phieu_bac_si_gui_duoc_si 
+            WHERE ma_don_thuoc IN (
+                SELECT ma_don_thuoc FROM don_thuoc 
+                WHERE ma_benh_nhan IN (
+                    SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+                )
+            )
+        """), {"user_id": user_id})
+        
+        # Step 2: Delete records that reference ho_so_benh_an (before deleting ho_so_benh_an)
+        db.execute(text("""
+            DELETE FROM don_thuoc 
+            WHERE ma_ho_so_benh_an IN (
+                SELECT ma_ho_so_benh_an FROM ho_so_benh_an 
+                WHERE ma_lich_hen IN (
+                    SELECT ma_lich_hen FROM lich_hen 
+                    WHERE ma_benh_nhan IN (
+                        SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+                    )
+                )
+            )
+        """), {"user_id": user_id})
+        
+        db.execute(text("""
+            DELETE FROM phieu_bac_si_gui_duoc_si 
+            WHERE ma_ho_so_benh_an IN (
+                SELECT ma_ho_so_benh_an FROM ho_so_benh_an 
+                WHERE ma_lich_hen IN (
+                    SELECT ma_lich_hen FROM lich_hen 
+                    WHERE ma_benh_nhan IN (
+                        SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+                    )
+                )
+            )
+        """), {"user_id": user_id})
+        
+        # Step 3: Delete records that reference lich_hen (before deleting lich_hen)
+        db.execute(text("""
+            DELETE FROM ho_so_benh_an 
+            WHERE ma_lich_hen IN (
+                SELECT ma_lich_hen FROM lich_hen 
+                WHERE ma_benh_nhan IN (
+                    SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+                )
+            )
+        """), {"user_id": user_id})
+        
+        db.execute(text("""
+            DELETE FROM hoa_don 
+            WHERE ma_lich_hen IN (
+                SELECT ma_lich_hen FROM lich_hen 
+                WHERE ma_benh_nhan IN (
+                    SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+                )
+            )
+        """), {"user_id": user_id})
+        
+        # Step 4: Delete phieu_bac_si_gui_duoc_si that directly references patient
+        db.execute(text("""
+            DELETE FROM phieu_bac_si_gui_duoc_si 
+            WHERE ma_benh_nhan IN (
+                SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+            )
+        """), {"user_id": user_id})
+        
+        # Step 5: Now safe to delete the main records
+        db.execute(text("""
+            DELETE FROM don_thuoc 
+            WHERE ma_benh_nhan IN (
+                SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+            )
+        """), {"user_id": user_id})
+        
+        db.execute(text("""
+            DELETE FROM hoa_don 
+            WHERE ma_benh_nhan IN (
+                SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+            )
+        """), {"user_id": user_id})
+        
+        db.execute(text("""
+            DELETE FROM lich_hen 
+            WHERE ma_benh_nhan IN (
+                SELECT ma_benh_nhan FROM benh_nhan WHERE ma_tai_khoan = :user_id
+            )
+        """), {"user_id": user_id})
+        
+        # Finally delete the user (this will cascade delete patient/doctor records)
         db.delete(user)
         db.commit()
-    except Exception:
+        
+    except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail="Không thể xóa tài khoản đã có dữ liệu liên kết. Vui lòng khóa tài khoản thay vì xóa.")
-    return {"message": "Đã xóa tài khoản"}
+        # Log the actual error for debugging
+        print(f"Error deleting user {user_id}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Lỗi khi xóa tài khoản: {str(e)}")
+    
+    return {"message": "Đã xóa tài khoản và tất cả dữ liệu liên quan"}
 
 
 @router.get("/api/v1/admin/contracts")
@@ -3697,3 +3991,20 @@ def list_inventory_logs(
         "limit": limit,
         "offset": offset
     }
+
+
+@router.delete("/api/v1/inventory-logs")
+def delete_all_inventory_logs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin", "pharmacist"])),
+):
+    """Xóa toàn bộ lịch sử xuất nhập kho (admin và dược sĩ)"""
+    try:
+        # Xóa tất cả inventory logs
+        deleted_count = db.query(InventoryLog).count()
+        db.query(InventoryLog).delete()
+        db.commit()
+        return {"message": f"Đã xóa thành công {deleted_count} bản ghi lịch sử xuất nhập kho"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi khi xóa lịch sử xuất nhập kho: {str(e)}")

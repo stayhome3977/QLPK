@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./qlpk.db"
     DEFAULT_ADMIN_EMAIL: str = "admin@qlpk.vn"
     DEFAULT_ADMIN_PASSWORD: str = "Admin@123"
+    
+    # Email Configuration
+    SMTP_SERVER: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    FROM_EMAIL: str = ""
+    FROM_NAME: str = "QLPK Da Lieu"
 
     @property
     def cors_origins(self) -> list[str]:

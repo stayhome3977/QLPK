@@ -87,7 +87,6 @@ export function LoginPage() {
       <section className="auth-visual">
         <span className="eyebrow">Đăng nhập hệ thống</span>
         <h1>Trang công khai cho bệnh nhân, dashboard riêng cho bác sĩ, dược sĩ và quản trị.</h1>
-        <p>Luồng mới bỏ lễ tân và thu ngân, toàn bộ thanh toán chuyển sang dược sĩ.</p>
         <div className="demo-accounts-popup">
           <strong>Tài khoản mẫu (Mật khẩu theo quyền):</strong>
           <ul>

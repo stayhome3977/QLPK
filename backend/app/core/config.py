@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     FRONTEND_URL: str = "http://localhost:5173"
     CORS_ORIGINS: str = Field(default="http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,https://frontend-d0oz.onrender.com")
+
+    # Always-allowed production origins (hard-coded safety net, never removed by env overrides)
+    _PRODUCTION_ORIGINS: list[str] = ["https://frontend-d0oz.onrender.com"]
     MAX_FILE_SIZE: int = 10485760
     UPLOAD_DIR: str = "uploads/"
     LOG_LEVEL: str = "INFO"
@@ -48,7 +51,14 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in (self.CORS_ORIGINS or self.BACKEND_CORS_ORIGINS).split(",") if origin.strip()]
+        # Merge both CORS_ORIGINS and BACKEND_CORS_ORIGINS, deduplicate
+        raw = f"{self.CORS_ORIGINS},{self.BACKEND_CORS_ORIGINS}"
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        # Always include production origins as a hard-coded safety net
+        for prod_origin in self._PRODUCTION_ORIGINS:
+            if prod_origin not in origins:
+                origins.append(prod_origin)
+        return origins
 
 
 @lru_cache

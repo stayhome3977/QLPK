@@ -11,10 +11,13 @@ from app.websocket.manager import manager
 app = FastAPI(title=settings.APP_NAME)
 logger = logging.getLogger(__name__)
 
-logger.info(f"CORS origins loaded: {settings.cors_origins}")
+_cors = settings.cors_origins
+logger.info("CORS origins loaded (%d):", len(_cors))
+for _o in _cors:
+    logger.info("  CORS allow: %s", _o)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=_cors,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -62,3 +62,13 @@ app.include_router(auth.router)
 app.include_router(clinic.router)
 app.include_router(reports.router)
 
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        log_level=settings.LOG_LEVEL.lower(),
+    )

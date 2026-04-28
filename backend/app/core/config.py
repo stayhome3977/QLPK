@@ -15,6 +15,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Server binding – loaded from .env / environment variables at runtime.
+    HOST: str = Field(default="0.0.0.0")
+    PORT: int = Field(default=8000)
+
     # Additional environment variables
     DEBUG: bool = False
     FRONTEND_URL: str = "http://localhost:5173"

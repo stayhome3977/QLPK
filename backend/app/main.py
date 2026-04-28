@@ -11,6 +11,7 @@ from app.websocket.manager import manager
 app = FastAPI(title=settings.APP_NAME)
 logger = logging.getLogger(__name__)
 
+logger.info(f"CORS origins loaded: {settings.cors_origins}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

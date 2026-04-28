@@ -1,1 +1,1 @@
-from app.routers import auth, clinic, reports  # noqa: F401
+from app.routers import auth, clinic, reports 

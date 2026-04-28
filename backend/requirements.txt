@@ -2,8 +2,8 @@ fastapi==0.116.1
 uvicorn[standard]==0.35.0
 sqlalchemy==2.0.41
 alembic==1.16.4
-pydantic==2.8.2
-pydantic-settings==2.8.1
+pydantic>=2.12,<3
+pydantic-settings>=2.8,<3
 email-validator==2.2.0
 httpx==0.28.1
 python-jose[cryptography]==3.5.0
@@ -11,7 +11,7 @@ python-multipart==0.0.20
 reportlab==4.4.2
 bcrypt<5
 pymysql==1.1.0
-cryptography==41.0.3
+cryptography>=41,<48
 qrcode[pil]==8.2
 psycopg2-binary
 python-dotenv==1.0.0

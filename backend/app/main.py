@@ -38,6 +38,11 @@ def startup_event():
         db.close()
 
 
+@app.get("/")
+def root():
+    return {"status": "ok", "app": settings.APP_NAME}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "app": settings.APP_NAME}

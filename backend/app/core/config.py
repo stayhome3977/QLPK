@@ -1,11 +1,19 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Resolve the absolute path to backend/.env so it works regardless of cwd
+_ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_FILE) if _ENV_FILE.exists() else None,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # Additional environment variables
     DEBUG: bool = False

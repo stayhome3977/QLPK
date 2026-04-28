@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # Additional environment variables
     DEBUG: bool = False
     FRONTEND_URL: str = "http://localhost:5173"
-    CORS_ORIGINS: str = Field(default="http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174")
+    CORS_ORIGINS: str = Field(default="http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,https://frontend-d0oz.onrender.com")
     MAX_FILE_SIZE: int = 10485760
     UPLOAD_DIR: str = "uploads/"
     LOG_LEVEL: str = "INFO"

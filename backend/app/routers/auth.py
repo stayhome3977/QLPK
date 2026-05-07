@@ -134,7 +134,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         # 500 Internal Server Error: lỗi hệ thống (ví dụ cấu hình SMTP, Render chặn SMTP, ...)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Không thể gửi email xác thực. Vui lòng thử lại sau hoặc liên hệ quản trị hệ thống."
+            detail=f"Không thể gửi email xác thực: {verification_code}"
         )
     
     logger.info(f"Verification email sent successfully to: {payload.email}")
@@ -210,7 +210,10 @@ def send_verification_email(payload: EmailVerificationRequest, db: Session = Dep
     
     success, result = auth_service.send_verification_email(payload.email, payload.full_name, db)
     if not success:
-        raise HTTPException(status_code=500, detail=f"Không thể gửi email xác thực: {result}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Không thể gửi email xác thực: {result}"
+        )
     
     return {"message": "Đã gửi lại email xác thực. Vui lòng kiểm tra hòm thư."}
 
@@ -303,7 +306,10 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     
     success, result = auth_service.send_password_reset_email(payload.email, user.full_name, db)
     if not success:
-        raise HTTPException(status_code=500, detail=f"Không thể gửi email đặt lại mật khẩu: {result}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Không thể gửi email đặt lại mật khẩu: {result}"
+        )
     
     return {"message": f"Mã đặt lại mật khẩu đã được gửi đến {payload.email}. Vui lòng kiểm tra email và nhập mã để tiếp tục."}
 

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # Email Configuration
     SMTP_SERVER: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
+    SMTP_USE_SSL: bool = False
     SMTP_USERNAME: str = ""
     SMTP_PASSWORD: str = ""
     FROM_EMAIL: str = ""

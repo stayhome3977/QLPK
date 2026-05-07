@@ -34,6 +34,7 @@ class EmailService:
     def __init__(self):
         self.smtp_server = settings.SMTP_SERVER
         self.smtp_port = settings.SMTP_PORT
+        self.smtp_use_ssl = settings.SMTP_USE_SSL
         self.smtp_username = settings.SMTP_USERNAME
         self.smtp_password = settings.SMTP_PASSWORD
         self.from_email = settings.FROM_EMAIL
@@ -99,9 +100,12 @@ class EmailService:
                 logger.info(f"Attempting to send email to {to_email}, attempt {attempt + 1}/{max_retries}")
                 
                 # Kết nối SMTP server với timeout
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30)
+                if self.smtp_use_ssl or self.smtp_port == 465:
+                    server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=30)
+                else:
+                    server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30)
+                    server.starttls()  # Bật mã hóa cho mode TLS
                 server.set_debuglevel(1)  # Enable debug logging
-                server.starttls()  # Bật mã hóa
                 
                 # Login with better error handling
                 try:
@@ -155,6 +159,12 @@ class EmailService:
                 # endregion
                 if attempt == max_retries - 1:
                     return False, f"unexpected_error: {e}"
+                import time
+                time.sleep(2 ** attempt)
+            except OSError as net_error:
+                logger.error(f"Network error on attempt {attempt + 1}: {net_error}")
+                if attempt == max_retries - 1:
+                    return False, f"network_error: {net_error}"
                 import time
                 time.sleep(2 ** attempt)
         

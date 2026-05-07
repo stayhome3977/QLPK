@@ -4,6 +4,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
+import logging
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -14,6 +15,7 @@ from app.seed import next_patient_code
 from app.services.auth_service import auth_service
 from app.services.email_service import email_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
@@ -74,9 +76,17 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         "address": payload.address
     }
     
+    logger.info("Sending verification email to %s", payload.email)
     success, verification_code = auth_service.send_verification_email(payload.email, payload.full_name, db, registration_data)
     if not success:
-        raise HTTPException(status_code=500, detail=f"Không thể gửi email xác thực: {verification_code}")
+        logger.error(
+            "Registration failed for %s: could not send verification email. Reason: %s",
+            payload.email, verification_code
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Không thể gửi email xác thực. Hệ thống email đang gặp sự cố, vui lòng thử lại sau."
+        )
     
     return {"message": f"Mã xác thực đã được gửi đến {payload.email}. Vui lòng kiểm tra email và nhập mã để hoàn tất đăng ký."}
 

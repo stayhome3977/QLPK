@@ -10,12 +10,6 @@ logger = logging.getLogger(__name__)
 
 class EmailService:
     def __init__(self):
-        # NOTE: config is read lazily inside _load_config() so that
-        # changes to env vars after module import are picked up.
-        pass
-
-    def _load_config(self):
-        """Re-read SMTP settings from the settings object each time."""
         self.smtp_server = settings.SMTP_SERVER
         self.smtp_port = settings.SMTP_PORT
         self.smtp_username = settings.SMTP_USERNAME
@@ -46,16 +40,9 @@ class EmailService:
         Returns:
             bool: True nếu gửi thành công, False nếu thất bại
         """
-        # Re-read config each call so Render env-vars are always current
-        self._load_config()
-
         # Validate email configuration
         if not self._validate_email_config():
-            logger.error(
-                "Email configuration is incomplete. "
-                "SMTP_USERNAME=%r FROM_EMAIL=%r – check Render environment variables.",
-                self.smtp_username, self.from_email,
-            )
+            logger.error("Email configuration is incomplete or invalid")
             return False
             
         # Tạo message

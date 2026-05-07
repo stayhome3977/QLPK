@@ -4,6 +4,7 @@ import logging
 
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
+import app.models  # noqa: F401 — phải import trước create_all() để đăng ký tất cả models vào Base.metadata
 from app.routers import auth, clinic, reports
 from app.seed import seed_defaults
 from app.websocket.manager import manager

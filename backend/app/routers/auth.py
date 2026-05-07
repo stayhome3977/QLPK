@@ -4,7 +4,6 @@ from typing import Dict, Any
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
-import logging
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -15,7 +14,6 @@ from app.seed import next_patient_code
 from app.services.auth_service import auth_service
 from app.services.email_service import email_service
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
@@ -54,6 +52,9 @@ def map_gender(value: str | None):
 
 @router.post("/register", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    import logging
+    logger = logging.getLogger(__name__)
+
     # Validate email format
     if not auth_service.validate_email(payload.email):
         raise HTTPException(status_code=400, detail="Email không hợp lệ")
@@ -76,19 +77,18 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         "address": payload.address
     }
     
-    logger.info("Sending verification email to %s", payload.email)
+    logger.info(f"Attempting to register user: {payload.email}")
     success, verification_code = auth_service.send_verification_email(payload.email, payload.full_name, db, registration_data)
     if not success:
-        logger.error(
-            "Registration failed for %s: could not send verification email. Reason: %s",
-            payload.email, verification_code
-        )
+        logger.error(f"Registration failed for {payload.email}: {verification_code}")
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Không thể gửi email xác thực. Hệ thống email đang gặp sự cố, vui lòng thử lại sau."
+            status_code=503,
+            detail=f"Không thể gửi email xác thực: {verification_code}"
         )
     
+    logger.info(f"Verification email sent successfully to: {payload.email}")
     return {"message": f"Mã xác thực đã được gửi đến {payload.email}. Vui lòng kiểm tra email và nhập mã để hoàn tất đăng ký."}
+
 
 
 @router.post("/login", response_model=TokenResponse)

@@ -4,9 +4,27 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
 import logging
+import json
+from datetime import datetime
+from pathlib import Path
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+_DEBUG_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "debug-9f8f98.log"
+
+
+def _append_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    payload = {
+        "sessionId": "9f8f98",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+    }
+    with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
 
 class EmailService:
     def __init__(self):
@@ -40,6 +58,22 @@ class EmailService:
         Returns:
             bool: True nếu gửi thành công, False nếu thất bại
         """
+        # region agent log
+        _append_debug_log(
+            run_id="pre-fix",
+            hypothesis_id="H1",
+            location="app/services/email_service.py:send_email:config_snapshot",
+            message="email config snapshot before validation",
+            data={
+                "smtp_server_set": bool(self.smtp_server),
+                "smtp_port": self.smtp_port,
+                "smtp_username_set": bool(self.smtp_username),
+                "smtp_password_set": bool(self.smtp_password),
+                "from_email_set": bool(self.from_email),
+                "to_email": to_email,
+            },
+        )
+        # endregion
         # Validate email configuration
         if not self._validate_email_config():
             logger.error("Email configuration is incomplete or invalid")
@@ -88,6 +122,15 @@ class EmailService:
                 
             except smtplib.SMTPException as smtp_error:
                 logger.error(f"SMTP error on attempt {attempt + 1}: {str(smtp_error)}")
+                # region agent log
+                _append_debug_log(
+                    run_id="pre-fix",
+                    hypothesis_id="H4",
+                    location="app/services/email_service.py:send_email:smtp_exception",
+                    message="smtp exception while sending",
+                    data={"attempt": attempt + 1, "error": str(smtp_error), "to_email": to_email},
+                )
+                # endregion
                 if attempt == max_retries - 1:
                     return False
                 # Wait before retry (exponential backoff)
@@ -96,6 +139,15 @@ class EmailService:
                 
             except Exception as e:
                 logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
+                # region agent log
+                _append_debug_log(
+                    run_id="pre-fix",
+                    hypothesis_id="H4",
+                    location="app/services/email_service.py:send_email:unexpected_exception",
+                    message="unexpected exception while sending",
+                    data={"attempt": attempt + 1, "error": str(e), "to_email": to_email},
+                )
+                # endregion
                 if attempt == max_retries - 1:
                     return False
                 import time

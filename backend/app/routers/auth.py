@@ -1,5 +1,7 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any
+import json
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
@@ -15,6 +17,21 @@ from app.services.auth_service import auth_service
 from app.services.email_service import email_service
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+_DEBUG_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "debug-9f8f98.log"
+
+
+def _append_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    payload = {
+        "sessionId": "9f8f98",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+    }
+    with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
 
 
 def serialize_user(user: User) -> dict:
@@ -55,6 +72,16 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     import logging
     logger = logging.getLogger(__name__)
 
+    # region agent log
+    _append_debug_log(
+        run_id="pre-fix",
+        hypothesis_id="H1",
+        location="app/routers/auth.py:register:entry",
+        message="register endpoint entered",
+        data={"email": payload.email, "has_password": bool(payload.password)},
+    )
+    # endregion
+
     # Validate email format
     if not auth_service.validate_email(payload.email):
         raise HTTPException(status_code=400, detail="Email không hợp lệ")
@@ -78,15 +105,42 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     }
     
     logger.info(f"Attempting to register user: {payload.email}")
+    # region agent log
+    _append_debug_log(
+        run_id="pre-fix",
+        hypothesis_id="H2",
+        location="app/routers/auth.py:register:before_send_verification",
+        message="about to send verification email",
+        data={"email": payload.email, "has_registration_data": bool(registration_data)},
+    )
+    # endregion
     success, verification_code = auth_service.send_verification_email(payload.email, payload.full_name, db, registration_data)
     if not success:
         logger.error(f"Registration failed for {payload.email}: {verification_code}")
+        # region agent log
+        _append_debug_log(
+            run_id="pre-fix",
+            hypothesis_id="H5",
+            location="app/routers/auth.py:register:send_failed",
+            message="verification email sending failed",
+            data={"email": payload.email, "error": verification_code},
+        )
+        # endregion
         raise HTTPException(
             status_code=503,
             detail=f"Không thể gửi email xác thực: {verification_code}"
         )
     
     logger.info(f"Verification email sent successfully to: {payload.email}")
+    # region agent log
+    _append_debug_log(
+        run_id="pre-fix",
+        hypothesis_id="H5",
+        location="app/routers/auth.py:register:send_success",
+        message="verification email sent successfully",
+        data={"email": payload.email},
+    )
+    # endregion
     return {"message": f"Mã xác thực đã được gửi đến {payload.email}. Vui lòng kiểm tra email và nhập mã để hoàn tất đăng ký."}
 
 

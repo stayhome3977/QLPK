@@ -4,12 +4,29 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import hashlib
 import logging
+import json
+from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.services.email_service import email_service
 
 logger = logging.getLogger(__name__)
+_DEBUG_LOG_PATH = Path(__file__).resolve().parent.parent.parent / "debug-9f8f98.log"
+
+
+def _append_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    payload = {
+        "sessionId": "9f8f98",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+    }
+    with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
 
 class AuthService:
     def __init__(self):
@@ -82,6 +99,15 @@ class AuthService:
             Tuple[bool, str]: (Thành công, Mã xác thực/Lỗi)
         """
         try:
+            # region agent log
+            _append_debug_log(
+                run_id="pre-fix",
+                hypothesis_id="H3",
+                location="app/services/auth_service.py:send_verification_email:entry",
+                message="send_verification_email started",
+                data={"email": email, "has_registration_data": bool(registration_data)},
+            )
+            # endregion
             # Tạo mã xác thực
             verification_code = self.generate_verification_code()
             expires_at = datetime.now() + timedelta(minutes=self.verification_code_expiry_minutes)
@@ -103,9 +129,27 @@ class AuthService:
             
             db.add(verification_record)
             db.commit()
+            # region agent log
+            _append_debug_log(
+                run_id="pre-fix",
+                hypothesis_id="H3",
+                location="app/services/auth_service.py:send_verification_email:db_committed",
+                message="verification code committed",
+                data={"email": email, "code_length": len(verification_code)},
+            )
+            # endregion
             
             # Gửi email
             email_sent = email_service.send_verification_code(email, full_name, verification_code)
+            # region agent log
+            _append_debug_log(
+                run_id="pre-fix",
+                hypothesis_id="H4",
+                location="app/services/auth_service.py:send_verification_email:email_result",
+                message="email service returned",
+                data={"email": email, "email_sent": email_sent},
+            )
+            # endregion
             
             if email_sent:
                 logger.info(f"Verification code sent to {email}: {verification_code}")
@@ -115,6 +159,15 @@ class AuthService:
                 
         except Exception as e:
             logger.error(f"Error sending verification email: {str(e)}")
+            # region agent log
+            _append_debug_log(
+                run_id="pre-fix",
+                hypothesis_id="H3",
+                location="app/services/auth_service.py:send_verification_email:exception",
+                message="exception in send_verification_email",
+                data={"email": email, "error": str(e)},
+            )
+            # endregion
             return False, f"Lỗi hệ thống: {str(e)}"
     
     def send_password_reset_email(self, email: str, full_name: str, db: Session) -> Tuple[bool, str]:

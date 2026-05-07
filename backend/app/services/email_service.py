@@ -74,10 +74,8 @@ class EmailService:
             },
         )
         # endregion
-        # Validate email configuration
-        if not self._validate_email_config():
-            logger.error("Email configuration is incomplete or invalid")
-            return False
+        # Validate email configuration (raise with safe reason if invalid)
+        self._validate_email_config_or_raise()
             
         # Tạo message
         msg = MIMEMultipart()
@@ -155,22 +153,25 @@ class EmailService:
         
         return False
     
-    def _validate_email_config(self) -> bool:
-        """
-        Validate email configuration
-        
-        Returns:
-            bool: True if configuration is valid
-        """
-        if not all([self.smtp_server, self.smtp_username, self.smtp_password, self.from_email]):
-            logger.error("Missing email configuration: SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD, or FROM_EMAIL")
-            return False
-        
+    def _validate_email_config_or_raise(self) -> None:
+        missing: list[str] = []
+        if not self.smtp_server:
+            missing.append("SMTP_SERVER")
+        if not self.smtp_username:
+            missing.append("SMTP_USERNAME")
+        if not self.smtp_password:
+            missing.append("SMTP_PASSWORD")
+        if not self.from_email:
+            missing.append("FROM_EMAIL")
+
+        if missing:
+            safe_reason = f"missing_email_config: {', '.join(missing)}"
+            logger.error(safe_reason)
+            raise RuntimeError(safe_reason)
+
         # Check if using Gmail with regular password (not app password)
         if "gmail.com" in self.smtp_username and len(self.smtp_password.split()) > 1:
             logger.warning("Using Gmail with spaces in password. Ensure you're using an App Password.")
-        
-        return True
     
     def send_verification_code(self, email: str, full_name: str, verification_code: str) -> bool:
         """

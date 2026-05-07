@@ -25,8 +25,12 @@ def _append_debug_log(run_id: str, hypothesis_id: str, location: str, message: s
         "data": data,
         "timestamp": int(datetime.utcnow().timestamp() * 1000),
     }
-    with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    try:
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except Exception:
+        # Never break registration/reset flow because debug logging fails.
+        return
 
 class AuthService:
     def __init__(self):

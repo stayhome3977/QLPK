@@ -30,8 +30,12 @@ def _append_debug_log(run_id: str, hypothesis_id: str, location: str, message: s
         "data": data,
         "timestamp": int(datetime.utcnow().timestamp() * 1000),
     }
-    with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    try:
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except Exception:
+        # Never break API flow because debug file logging fails in deployment.
+        return
 
 
 def serialize_user(user: User) -> dict:
@@ -116,6 +120,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     # endregion
     success, verification_code = auth_service.send_verification_email(payload.email, payload.full_name, db, registration_data)
     if not success:
+        # Ghi log chi tiết nội bộ nhưng trả về lỗi 500 chuẩn cho client
         logger.error(f"Registration failed for {payload.email}: {verification_code}")
         # region agent log
         _append_debug_log(
@@ -126,9 +131,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
             data={"email": payload.email, "error": verification_code},
         )
         # endregion
+        # 500 Internal Server Error: lỗi hệ thống (ví dụ cấu hình SMTP, Render chặn SMTP, ...)
         raise HTTPException(
-            status_code=503,
-            detail=f"Không thể gửi email xác thực: {verification_code}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Không thể gửi email xác thực. Vui lòng thử lại sau hoặc liên hệ quản trị hệ thống."
         )
     
     logger.info(f"Verification email sent successfully to: {payload.email}")

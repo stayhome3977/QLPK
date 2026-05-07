@@ -2,7 +2,7 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Optional
+from typing import Optional, Tuple
 import logging
 import json
 from datetime import datetime
@@ -47,7 +47,7 @@ class EmailService:
         is_html: bool = False,
         to_name: Optional[str] = None,
         max_retries: int = 3
-    ) -> bool:
+    ) -> Tuple[bool, str]:
         """
         Gửi email sử dụng SMTP Gmail với retry mechanism
         
@@ -60,7 +60,7 @@ class EmailService:
             max_retries: Số lần thử lại tối đa
             
         Returns:
-            bool: True nếu gửi thành công, False nếu thất bại
+            Tuple[bool, str]: (True, "ok") nếu thành công, ngược lại (False, lý do lỗi)
         """
         # region agent log
         _append_debug_log(
@@ -79,7 +79,10 @@ class EmailService:
         )
         # endregion
         # Validate email configuration (raise with safe reason if invalid)
-        self._validate_email_config_or_raise()
+        try:
+            self._validate_email_config_or_raise()
+        except Exception as config_error:
+            return False, str(config_error)
             
         # Tạo message
         msg = MIMEMultipart()
@@ -107,11 +110,11 @@ class EmailService:
                     logger.error(f"SMTP Authentication failed: {auth_error}")
                     if "application-specific password" in str(auth_error).lower():
                         logger.error("Gmail requires an App Password. Please generate one at: https://myaccount.google.com/apppasswords")
-                    return False
+                    return False, f"smtp_auth_failed: {auth_error}"
                 except Exception as login_error:
                     logger.error(f"Login failed: {login_error}")
                     if attempt == max_retries - 1:
-                        return False
+                        return False, f"smtp_login_failed: {login_error}"
                     continue
                 
                 # Gửi email
@@ -120,7 +123,7 @@ class EmailService:
                 server.quit()
                 
                 logger.info(f"Email sent successfully to {to_email}")
-                return True
+                return True, "ok"
                 
             except smtplib.SMTPException as smtp_error:
                 logger.error(f"SMTP error on attempt {attempt + 1}: {str(smtp_error)}")
@@ -134,7 +137,7 @@ class EmailService:
                 )
                 # endregion
                 if attempt == max_retries - 1:
-                    return False
+                    return False, f"smtp_error: {smtp_error}"
                 # Wait before retry (exponential backoff)
                 import time
                 time.sleep(2 ** attempt)
@@ -151,11 +154,11 @@ class EmailService:
                 )
                 # endregion
                 if attempt == max_retries - 1:
-                    return False
+                    return False, f"unexpected_error: {e}"
                 import time
                 time.sleep(2 ** attempt)
         
-        return False
+        return False, "smtp_send_failed_after_retries"
     
     def _validate_email_config_or_raise(self) -> None:
         missing: list[str] = []
@@ -177,7 +180,7 @@ class EmailService:
         if "gmail.com" in self.smtp_username and len(self.smtp_password.split()) > 1:
             logger.warning("Using Gmail with spaces in password. Ensure you're using an App Password.")
     
-    def send_verification_code(self, email: str, full_name: str, verification_code: str) -> bool:
+    def send_verification_code(self, email: str, full_name: str, verification_code: str) -> Tuple[bool, str]:
         """
         Gửi mã xác thực đăng ký tài khoản
         
@@ -187,7 +190,7 @@ class EmailService:
             verification_code: Mã xác thực
             
         Returns:
-            bool: True nếu gửi thành công
+            Tuple[bool, str]: Kết quả gửi email và lý do lỗi nếu có
         """
         subject = "Mã Xác Thực Tài Khoản Bệnh Viện"
         
@@ -235,7 +238,7 @@ class EmailService:
         
         return self.send_email(email, subject, html_body, is_html=True, to_name=full_name)
     
-    def send_password_reset_code(self, email: str, full_name: str, reset_code: str) -> bool:
+    def send_password_reset_code(self, email: str, full_name: str, reset_code: str) -> Tuple[bool, str]:
         """
         Gửi mã đặt lại mật khẩu
         
@@ -245,7 +248,7 @@ class EmailService:
             reset_code: Mã đặt lại mật khẩu
             
         Returns:
-            bool: True nếu gửi thành công
+            Tuple[bool, str]: Kết quả gửi email và lý do lỗi nếu có
         """
         subject = "Mã Đặt Lại Mật Khẩu (OTP)"
         

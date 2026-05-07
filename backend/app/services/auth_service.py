@@ -144,14 +144,14 @@ class AuthService:
             # endregion
             
             # Gửi email
-            email_sent = email_service.send_verification_code(email, full_name, verification_code)
+            email_sent, email_error = email_service.send_verification_code(email, full_name, verification_code)
             # region agent log
             _append_debug_log(
                 run_id="pre-fix",
                 hypothesis_id="H4",
                 location="app/services/auth_service.py:send_verification_email:email_result",
                 message="email service returned",
-                data={"email": email, "email_sent": email_sent},
+                data={"email": email, "email_sent": email_sent, "email_error": email_error},
             )
             # endregion
             
@@ -159,7 +159,7 @@ class AuthService:
                 logger.info(f"Verification code sent to {email}: {verification_code}")
                 return True, verification_code
             else:
-                return False, "Không thể gửi email xác thực"
+                return False, f"Không thể gửi email xác thực ({email_error})"
                 
         except Exception as e:
             logger.error(f"Error sending verification email: {str(e)}")
@@ -203,13 +203,13 @@ class AuthService:
             db.commit()
             
             # Gửi email
-            email_sent = email_service.send_password_reset_code(email, full_name, reset_code)
+            email_sent, email_error = email_service.send_password_reset_code(email, full_name, reset_code)
             
             if email_sent:
                 logger.info(f"Password reset code sent to {email}: {reset_code}")
                 return True, reset_code
             else:
-                return False, "Không thể gửi email đặt lại mật khẩu"
+                return False, f"Không thể gửi email đặt lại mật khẩu ({email_error})"
                 
         except Exception as e:
             logger.error(f"Error sending password reset email: {str(e)}")

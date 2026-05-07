@@ -23,10 +23,11 @@ class EmailService:
         subject: str, 
         body: str, 
         is_html: bool = False,
-        to_name: Optional[str] = None
+        to_name: Optional[str] = None,
+        max_retries: int = 3
     ) -> bool:
         """
-        Gửi email sử dụng SMTP Gmail
+        Gửi email sử dụng SMTP Gmail với retry mechanism
         
         Args:
             to_email: Email người nhận
@@ -34,36 +35,90 @@ class EmailService:
             body: Nội dung email
             is_html: Email có phải định dạng HTML không
             to_name: Tên người nhận (tùy chọn)
+            max_retries: Số lần thử lại tối đa
             
         Returns:
             bool: True nếu gửi thành công, False nếu thất bại
         """
-        try:
-            # Tạo message
-            msg = MIMEMultipart()
-            msg['From'] = f"{self.from_name} <{self.from_email}>"
-            msg['To'] = f"{to_name} <{to_email}>" if to_name else to_email
-            msg['Subject'] = subject
-            
-            # Thêm nội dung
-            msg.attach(MIMEText(body, 'html' if is_html else 'plain', 'utf-8'))
-            
-            # Kết nối SMTP server
-            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
-            server.starttls()  # Bật mã hóa
-            server.login(self.smtp_username, self.smtp_password)
-            
-            # Gửi email
-            text = msg.as_string()
-            server.sendmail(self.from_email, to_email, text)
-            server.quit()
-            
-            logger.info(f"Email sent successfully to {to_email}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {str(e)}")
+        # Validate email configuration
+        if not self._validate_email_config():
+            logger.error("Email configuration is incomplete or invalid")
             return False
+            
+        # Tạo message
+        msg = MIMEMultipart()
+        msg['From'] = f"{self.from_name} <{self.from_email}>"
+        msg['To'] = f"{to_name} <{to_email}>" if to_name else to_email
+        msg['Subject'] = subject
+        
+        # Thêm nội dung
+        msg.attach(MIMEText(body, 'html' if is_html else 'plain', 'utf-8'))
+        
+        # Retry mechanism
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Attempting to send email to {to_email}, attempt {attempt + 1}/{max_retries}")
+                
+                # Kết nối SMTP server với timeout
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30)
+                server.set_debuglevel(1)  # Enable debug logging
+                server.starttls()  # Bật mã hóa
+                
+                # Login with better error handling
+                try:
+                    server.login(self.smtp_username, self.smtp_password)
+                except smtplib.SMTPAuthenticationError as auth_error:
+                    logger.error(f"SMTP Authentication failed: {auth_error}")
+                    if "application-specific password" in str(auth_error).lower():
+                        logger.error("Gmail requires an App Password. Please generate one at: https://myaccount.google.com/apppasswords")
+                    return False
+                except Exception as login_error:
+                    logger.error(f"Login failed: {login_error}")
+                    if attempt == max_retries - 1:
+                        return False
+                    continue
+                
+                # Gửi email
+                text = msg.as_string()
+                server.sendmail(self.from_email, to_email, text)
+                server.quit()
+                
+                logger.info(f"Email sent successfully to {to_email}")
+                return True
+                
+            except smtplib.SMTPException as smtp_error:
+                logger.error(f"SMTP error on attempt {attempt + 1}: {str(smtp_error)}")
+                if attempt == max_retries - 1:
+                    return False
+                # Wait before retry (exponential backoff)
+                import time
+                time.sleep(2 ** attempt)
+                
+            except Exception as e:
+                logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
+                if attempt == max_retries - 1:
+                    return False
+                import time
+                time.sleep(2 ** attempt)
+        
+        return False
+    
+    def _validate_email_config(self) -> bool:
+        """
+        Validate email configuration
+        
+        Returns:
+            bool: True if configuration is valid
+        """
+        if not all([self.smtp_server, self.smtp_username, self.smtp_password, self.from_email]):
+            logger.error("Missing email configuration: SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD, or FROM_EMAIL")
+            return False
+        
+        # Check if using Gmail with regular password (not app password)
+        if "gmail.com" in self.smtp_username and len(self.smtp_password.split()) > 1:
+            logger.warning("Using Gmail with spaces in password. Ensure you're using an App Password.")
+        
+        return True
     
     def send_verification_code(self, email: str, full_name: str, verification_code: str) -> bool:
         """

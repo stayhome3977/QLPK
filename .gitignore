@@ -12,9 +12,9 @@ dist/
 build/
 
 # Environment
-#.env
-#.env.local
-#.env.production
+.env
+.env.local
+.env.production
 
 # Node / React
 node_modules/

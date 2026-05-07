@@ -5,7 +5,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve the absolute path to backend/.env so it works regardless of cwd
-_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+_ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
 
 
 class Settings(BaseSettings):

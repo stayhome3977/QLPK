@@ -69,7 +69,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         "full_name": payload.full_name,
         "password": get_password_hash(payload.password),
         "phone": payload.phone,
-        "date_of_birth": payload.date_of_birth,
+        "date_of_birth": str(payload.date_of_birth) if payload.date_of_birth else None,
         "gender": payload.gender,
         "address": payload.address
     }

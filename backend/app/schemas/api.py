@@ -45,6 +45,15 @@ class RegisterRequest(BaseModel):
     gender: str | None = None
     address: str | None = None
     
+    @field_validator("phone", mode="before")
+    @classmethod
+    def empty_phone_to_none(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
     @field_validator('phone')
     @classmethod
     def validate_phone(cls, v):

@@ -70,7 +70,10 @@ export function LoginPage() {
     try {
       setLoading(true);
       setError("");
-      await api.post("/api/v1/auth/register", registerForm);
+      await api.post("/api/v1/auth/register", {
+        ...registerForm,
+        phone: registerForm.phone.trim() ? registerForm.phone.trim() : null,
+      });
       
       // Redirect to verification page instead of trying to login immediately
       navigate(`/verify-email?email=${encodeURIComponent(registerForm.email)}`, { replace: true });

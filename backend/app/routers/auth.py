@@ -120,7 +120,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     # endregion
     success, verification_code = auth_service.send_verification_email(payload.email, payload.full_name, db, registration_data)
     if not success:
-        # Ghi log chi tiết nội bộ nhưng trả về lỗi 500 chuẩn cho client
+        # Ghi log chi tiết nội bộ và trả về message mềm để tránh chặn UX đăng ký
         logger.error(f"Registration failed for {payload.email}: {verification_code}")
         # region agent log
         _append_debug_log(
@@ -132,10 +132,12 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         )
         # endregion
         # 500 Internal Server Error: lỗi hệ thống (ví dụ cấu hình SMTP, Render chặn SMTP, ...)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Không thể gửi email xác thực: {verification_code}"
-        )
+        return {
+            "message": (
+                f"Đăng ký thành công nhưng chưa thể gửi email xác thực ({verification_code}). "
+                f"Vui lòng dùng chức năng gửi lại mã xác thực cho {payload.email} sau ít phút."
+            )
+        }
     
     logger.info(f"Verification email sent successfully to: {payload.email}")
     # region agent log
